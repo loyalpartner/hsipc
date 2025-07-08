@@ -28,6 +28,7 @@ dashmap = "5.5"
 futures = "0.3"
 pin-project = "1.1"
 once_cell = "1.19"
+type-uuid = "0.1"
 
 # Macro dependencies
 syn = { version = "2.0", features = ["full", "extra-traits"] }

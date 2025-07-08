@@ -79,7 +79,7 @@ impl Service for Calculator {
 }
 
 #[cfg(test)]
-mod tests {
+mod integration_tests {
     use super::*;
     use tokio::time::timeout;
 

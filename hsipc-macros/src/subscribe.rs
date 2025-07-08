@@ -91,7 +91,9 @@ fn parse_subscribe_topic(args: TokenStream) -> Option<String> {
 fn extract_topic_from_method(method: &ItemFn) -> Option<String> {
     let method_name = method.sig.ident.to_string();
 
-    method_name.strip_prefix("on_").map(|event_name| format!("events/{event_name}"))
+    method_name
+        .strip_prefix("on_")
+        .map(|event_name| format!("events/{event_name}"))
 }
 
 /// Extract event type from method signature

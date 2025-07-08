@@ -67,14 +67,14 @@ async fn demonstrate_trait_interface() -> Result<()> {
     Ok(())
 }
 
-async fn run_single_process_test() -> Result<()> {
-    info!("=== Single Process Test ===");
+async fn run_server() -> Result<()> {
+    info!("=== Starting Calculator Server ===");
 
-    // Create hub
-    let hub = ProcessHub::new("test_hub").await?;
-    info!("Hub created");
+    // Create server hub
+    let hub = ProcessHub::new("calculator_server").await?;
+    info!("Server hub created");
 
-    // Register basic service
+    // Register calculator service
     let service = BasicCalculatorService::new(BasicCalculator);
     info!(
         "Service created: name={}, methods={:?}",
@@ -82,39 +82,54 @@ async fn run_single_process_test() -> Result<()> {
         service.methods()
     );
     hub.register_service(service).await?;
-    info!("Service registered");
+    info!("✅ Calculator service registered and ready!");
 
-    // Wait a bit for registration to settle
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // Wait for service registration to propagate
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    // Test direct hub call
-    info!("Testing direct hub call:");
-    match hub.call::<_, i32>("Calculator.add", (10, 5)).await {
-        Ok(result) => info!("✅ Direct call result: {result}"),
-        Err(e) => info!("❌ Direct call failed: {e}"),
+    info!("🔄 Server running... Press Ctrl+C to stop");
+
+    // Keep server running
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
+}
 
-    // Test with typed client using same hub
-    info!("Testing typed client:");
-    let client = CalculatorClient::new("test_hub_client").await?;
-    match client.add((10, 5)).await {
-        Ok(result) => info!("✅ Client call result: {result}"),
-        Err(e) => info!("❌ Client call failed: {e}"),
+async fn run_client() -> Result<()> {
+    info!("=== Starting Calculator Client ===");
+
+    // Wait a bit for server to be ready
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+    // Create client hub
+    let client = CalculatorClient::new("calculator_client").await?;
+    info!("Client connected");
+
+    // Wait for service discovery
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // Test addition
+    info!("📱 Testing addition:");
+    match client.add((15, 25)).await {
+        Ok(result) => info!("✅ 15 + 25 = {result}"),
+        Err(e) => info!("❌ Addition failed: {e}"),
     }
 
     // Test multiplication
-    match client.multiply((7, 8)).await {
-        Ok(result) => info!("✅ Multiplication result: {result}"),
+    info!("📱 Testing multiplication:");
+    match client.multiply((8, 9)).await {
+        Ok(result) => info!("✅ 8 × 9 = {result}"),
         Err(e) => info!("❌ Multiplication failed: {e}"),
     }
 
     // Test factorial
-    match client.factorial(5).await {
-        Ok(result) => info!("✅ Factorial result: {result}"),
+    info!("📱 Testing factorial:");
+    match client.factorial(6).await {
+        Ok(result) => info!("✅ 6! = {result}"),
         Err(e) => info!("❌ Factorial failed: {e}"),
     }
 
-    info!("Single process test completed! ✅");
+    info!("✅ Client test completed!");
     Ok(())
 }
 
@@ -126,13 +141,15 @@ async fn main() -> Result<()> {
 
     if args.len() < 2 {
         info!("Usage:");
-        info!("  {} test    - Run service test", args[0]);
+        info!("  {} server  - Run calculator server", args[0]);
+        info!("  {} client  - Run calculator client", args[0]);
         info!("  {} demo    - Run trait interface demonstration", args[0]);
         std::process::exit(1);
     }
 
     match args[1].as_str() {
-        "test" => run_single_process_test().await,
+        "server" => run_server().await,
+        "client" => run_client().await,
         "demo" => {
             demonstrate_trait_interface().await?;
             info!("Trait interface demonstration completed! ✅");

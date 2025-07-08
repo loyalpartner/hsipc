@@ -95,6 +95,7 @@ pub mod hub;
 pub mod message;
 pub mod service;
 pub mod transport;
+pub mod transport_ipmb;
 
 #[cfg(test)]
 mod tests;

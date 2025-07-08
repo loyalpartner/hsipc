@@ -8,11 +8,17 @@ use uuid::Uuid;
 
 use crate::{
     event::{Event, Subscriber, Subscription, SubscriptionRegistry},
-    message::MessageType,
+    message::{MessageType, ServiceDirectory, ServiceInfo},
     service::{Service, ServiceRegistry},
-    transport::{IpmbTransport, Transport},
+    transport::Transport,
     Error, Message, Result,
 };
+
+#[cfg(test)]
+use crate::transport::IpmbTransport;
+
+#[cfg(not(test))]
+use crate::transport_ipmb::IpmbTransport;
 
 /// Main process hub for IPC communication
 #[derive(Clone)]
@@ -23,6 +29,8 @@ pub struct ProcessHub {
     subscription_registry: Arc<SubscriptionRegistry>,
     pending_requests:
         Arc<RwLock<std::collections::HashMap<Uuid, tokio::sync::oneshot::Sender<Message>>>>,
+    /// Remote service directory for cross-process service discovery
+    remote_services: Arc<RwLock<std::collections::HashMap<String, ServiceInfo>>>,
 }
 
 impl ProcessHub {
@@ -36,6 +44,7 @@ impl ProcessHub {
             service_registry: Arc::new(ServiceRegistry::new()),
             subscription_registry: Arc::new(SubscriptionRegistry::new()),
             pending_requests: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            remote_services: Arc::new(RwLock::new(std::collections::HashMap::new())),
         };
 
         // Start message processing
@@ -50,22 +59,21 @@ impl ProcessHub {
         let service_registry = self.service_registry.clone();
         let subscription_registry = self.subscription_registry.clone();
         let pending_requests = self.pending_requests.clone();
+        let remote_services = self.remote_services.clone();
+        let hub_name = self.name.clone();
 
         tokio::spawn(async move {
-            loop {
-                match transport.recv().await {
-                    Ok(msg) => {
-                        let _ = Self::process_message(
-                            msg,
-                            &service_registry,
-                            &subscription_registry,
-                            &pending_requests,
-                            &transport,
-                        )
-                        .await;
-                    }
-                    Err(_) => break,
-                }
+            while let Ok(msg) = transport.recv().await {
+                let _ = Self::process_message(
+                    msg,
+                    &service_registry,
+                    &subscription_registry,
+                    &pending_requests,
+                    &remote_services,
+                    &transport,
+                    &hub_name,
+                )
+                .await;
             }
         });
     }
@@ -78,7 +86,9 @@ impl ProcessHub {
         pending_requests: &RwLock<
             std::collections::HashMap<Uuid, tokio::sync::oneshot::Sender<Message>>,
         >,
+        remote_services: &RwLock<std::collections::HashMap<String, ServiceInfo>>,
         transport: &Arc<dyn Transport>,
+        hub_name: &str,
     ) -> Result<()> {
         match msg.msg_type {
             MessageType::Request => {
@@ -114,6 +124,83 @@ impl ProcessHub {
                     let _ = subscription_registry.publish(topic, msg.payload).await;
                 }
             }
+            MessageType::ServiceRegister => {
+                // Handle remote service registration
+                if let Ok(service_info) = bincode::deserialize::<ServiceInfo>(&msg.payload) {
+                    tracing::info!(
+                        "📋 Received service registration: {} from {}",
+                        service_info.name,
+                        service_info.process_name
+                    );
+                    let mut remote_services = remote_services.write().await;
+                    for method in &service_info.methods {
+                        let full_method = format!("{}.{}", service_info.name, method);
+                        remote_services.insert(full_method.clone(), service_info.clone());
+                        tracing::info!("📝 Registered remote method: {}", full_method);
+                    }
+                }
+            }
+            MessageType::ServiceQuery => {
+                // Handle service query - respond with our local services
+                tracing::info!("🔍 Received service query from {}", msg.source);
+                if let Some(correlation_id) = msg.correlation_id {
+                    let services = service_registry.list_services().await;
+                    tracing::info!("📋 Local services available: {:?}", services);
+                    let mut service_infos = Vec::new();
+
+                    for service_name in services {
+                        if let Some(service) = service_registry.get_service(&service_name).await {
+                            let service_info = ServiceInfo {
+                                name: service_name.clone(),
+                                methods: service.methods().iter().map(|&s| s.to_string()).collect(),
+                                process_name: hub_name.to_string(),
+                                registered_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis()
+                                    as u64,
+                            };
+                            service_infos.push(service_info);
+                            tracing::info!(
+                                "📤 Responding with service: {} methods={:?}",
+                                service_name,
+                                service.methods()
+                            );
+                        }
+                    }
+
+                    let directory = ServiceDirectory {
+                        services: service_infos,
+                    };
+
+                    let response = Message::service_directory(
+                        hub_name.to_string(),
+                        msg.source.clone(),
+                        directory,
+                        Some(correlation_id),
+                    );
+                    let _ = transport.send(response).await;
+                    tracing::info!("📬 Sent service directory to {}", msg.source);
+                }
+            }
+            MessageType::ServiceDirectory => {
+                // Handle service directory response
+                tracing::info!("📬 Received service directory from {}", msg.source);
+                if let Ok(directory) = bincode::deserialize::<ServiceDirectory>(&msg.payload) {
+                    let mut remote_services = remote_services.write().await;
+                    for service_info in directory.services {
+                        for method in &service_info.methods {
+                            let full_method = format!("{}.{}", service_info.name, method);
+                            remote_services.insert(full_method.clone(), service_info.clone());
+                            tracing::info!(
+                                "📝 Learned remote method: {} from {}",
+                                full_method,
+                                service_info.process_name
+                            );
+                        }
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -122,7 +209,32 @@ impl ProcessHub {
 
     /// Register a service
     pub async fn register_service<S: Service>(&self, service: S) -> Result<()> {
-        self.service_registry.register(service).await
+        let service_name = service.name().to_string();
+        let methods: Vec<String> = service.methods().iter().map(|&s| s.to_string()).collect();
+
+        // Register locally first
+        self.service_registry.register(service).await?;
+
+        // Broadcast service registration to other processes
+        let service_info = ServiceInfo {
+            name: service_name,
+            methods,
+            process_name: self.name.clone(),
+            registered_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        };
+
+        let registration_msg = Message::service_register(self.name.clone(), service_info.clone());
+        let _ = self.transport.send(registration_msg).await;
+        tracing::info!(
+            "📤 Broadcasted service registration: {} methods={:?}",
+            service_info.name,
+            service_info.methods
+        );
+
+        Ok(())
     }
 
     /// Call a service method
@@ -131,13 +243,49 @@ impl ProcessHub {
         service_method: &str,
         request: T,
     ) -> Result<R> {
+        // First try local service
+        if let Ok(result) = self
+            .service_registry
+            .call(service_method, bincode::serialize(&request)?)
+            .await
+        {
+            return Ok(bincode::deserialize(&result)?);
+        }
+
+        // If not found locally, check remote services
+        let target_process = {
+            let remote_services = self.remote_services.read().await;
+            remote_services
+                .get(service_method)
+                .map(|info| info.process_name.clone())
+        };
+
+        // If we don't know about the service, query all processes
+        if target_process.is_none() {
+            tracing::info!(
+                "🔍 Service {} not found locally, querying remote processes",
+                service_method
+            );
+            let _ = self.query_services().await;
+            // Wait a bit for responses
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        // Try to find the service again after query
+        let target_process = {
+            let remote_services = self.remote_services.read().await;
+            remote_services
+                .get(service_method)
+                .map(|info| info.process_name.clone())
+        };
+
         let payload = bincode::serialize(&request)?;
         let request_id = uuid::Uuid::new_v4();
         let msg = Message {
             id: request_id,
             msg_type: MessageType::Request,
             source: self.name.clone(),
-            target: None, // Service call - broadcast to all services
+            target: target_process, // Direct to specific process if known
             topic: Some(service_method.to_string()),
             payload,
             correlation_id: Some(request_id),
@@ -171,6 +319,12 @@ impl ProcessHub {
             }
             _ => Err(Error::Other(anyhow::anyhow!("Unexpected response type"))),
         }
+    }
+
+    /// Query remote services
+    async fn query_services(&self) -> Result<()> {
+        let query_msg = Message::service_query(self.name.clone(), None);
+        self.transport.send(query_msg).await
     }
 
     /// Subscribe to events

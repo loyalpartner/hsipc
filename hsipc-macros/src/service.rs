@@ -332,7 +332,8 @@ fn extract_method_types(
     let request_type = method
         .sig
         .inputs
-        .iter().nth(1)
+        .iter()
+        .nth(1)
         .and_then(|arg| {
             if let FnArg::Typed(PatType { ty, .. }) = arg {
                 Some(ty.clone())
@@ -376,7 +377,8 @@ fn extract_method_signature(
     let param_type = method
         .sig
         .inputs
-        .iter().nth(1)
+        .iter()
+        .nth(1)
         .and_then(|arg| {
             if let FnArg::Typed(PatType { ty, .. }) = arg {
                 Some(ty.clone())
@@ -419,7 +421,8 @@ fn extract_trait_method_signature(
     let param_type = method
         .sig
         .inputs
-        .iter().nth(1)
+        .iter()
+        .nth(1)
         .and_then(|arg| {
             if let FnArg::Typed(PatType { ty, .. }) = arg {
                 Some(ty.clone())

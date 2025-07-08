@@ -6,8 +6,9 @@
 
 - Readme.md 使用中文
 - 注释使用英文
-- 不允许使用 println 宏，库的日志请使用 log 日志库，日志级别请使用 info 级别
+- 不允许使用 println 宏，库的日志请使用 log 日志库，日志级别请使用 info 级别, 用 trace 级别
 - 每个阶段结束后执行 cargo fmt 格式化代码， cargo clippy 检查代码质量并修复
+- 错误需要用 thiserror 重构下
 
 ## Future Enhancements / 待评估功能
 

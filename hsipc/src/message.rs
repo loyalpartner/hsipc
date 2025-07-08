@@ -40,6 +40,11 @@ pub enum MessageType {
     Unsubscribe,
     Heartbeat,
     Error,
+    // Service discovery messages
+    ServiceRegister,
+    ServiceUnregister,
+    ServiceQuery,
+    ServiceDirectory,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,15 +62,13 @@ pub struct MessageMetadata {
     pub retain: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum Priority {
     Low,
     #[default]
     Normal,
     High,
 }
-
 
 impl Message {
     /// Create a new request message
@@ -137,4 +140,71 @@ pub struct Request<T> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Response<T> {
     pub result: Result<T, String>,
+}
+
+/// Service registration information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceInfo {
+    pub name: String,
+    pub methods: Vec<String>,
+    pub process_name: String,
+    pub registered_at: u64,
+}
+
+/// Service directory containing all available services
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceDirectory {
+    pub services: Vec<ServiceInfo>,
+}
+
+impl Message {
+    /// Create a service registration message
+    pub fn service_register(source: String, service_info: ServiceInfo) -> Self {
+        let payload = bincode::serialize(&service_info).unwrap_or_default();
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::ServiceRegister,
+            source,
+            target: None, // Broadcast to all processes
+            topic: Some("service.register".to_string()),
+            payload,
+            correlation_id: None,
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a service query message
+    pub fn service_query(source: String, service_name: Option<String>) -> Self {
+        let payload = bincode::serialize(&service_name).unwrap_or_default();
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::ServiceQuery,
+            source,
+            target: None, // Broadcast to all processes
+            topic: Some("service.query".to_string()),
+            payload,
+            correlation_id: Some(Uuid::new_v4()),
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a service directory response message
+    pub fn service_directory(
+        source: String,
+        target: String,
+        directory: ServiceDirectory,
+        correlation_id: Option<Uuid>,
+    ) -> Self {
+        let payload = bincode::serialize(&directory).unwrap_or_default();
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::ServiceDirectory,
+            source,
+            target: Some(target),
+            topic: Some("service.directory".to_string()),
+            payload,
+            correlation_id,
+            metadata: MessageMetadata::default(),
+        }
+    }
 }

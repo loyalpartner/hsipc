@@ -94,24 +94,19 @@ impl IpmbTransport {
         // Spawn a task to filter messages for this process
         let process_name_clone = process_name.to_string();
         let receiver_task = tokio::spawn(async move {
-            loop {
-                match bus_receiver.recv().await {
-                    Ok(msg) => {
-                        // Filter messages for this process
-                        let should_receive = match &msg.target {
-                            Some(target) => target == &process_name_clone,
-                            None => {
-                                // This is a broadcast/event message, or a service call
-                                // Both service calls and events should be received
-                                true
-                            }
-                        };
-
-                        if should_receive && local_tx.send(msg).await.is_err() {
-                            break; // Receiver dropped
-                        }
+            while let Ok(msg) = bus_receiver.recv().await {
+                // Filter messages for this process
+                let should_receive = match &msg.target {
+                    Some(target) => target == &process_name_clone,
+                    None => {
+                        // This is a broadcast/event message, or a service call
+                        // Both service calls and events should be received
+                        true
                     }
-                    Err(_) => break, // Channel closed
+                };
+
+                if should_receive && local_tx.send(msg).await.is_err() {
+                    break; // Receiver dropped
                 }
             }
         });

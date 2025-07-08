@@ -23,17 +23,23 @@ pub trait Service: Send + Sync + 'static {
 pub type MethodHandler =
     Arc<dyn Fn(Vec<u8>) -> futures::future::BoxFuture<'static, Result<Vec<u8>>> + Send + Sync>;
 
+/// Type alias for service map to reduce complexity
+type ServiceMap = Arc<RwLock<HashMap<String, Arc<dyn Service>>>>;
+
+/// Type alias for method map to reduce complexity  
+type MethodMap = Arc<RwLock<HashMap<String, MethodHandler>>>;
+
 /// Global service registry shared across all hubs
-static GLOBAL_SERVICES: once_cell::sync::Lazy<Arc<RwLock<HashMap<String, Arc<dyn Service>>>>> =
+static GLOBAL_SERVICES: once_cell::sync::Lazy<ServiceMap> =
     once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
-static GLOBAL_METHODS: once_cell::sync::Lazy<Arc<RwLock<HashMap<String, MethodHandler>>>> =
+static GLOBAL_METHODS: once_cell::sync::Lazy<MethodMap> =
     once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 /// Service registry for managing services
 pub struct ServiceRegistry {
-    services: Arc<RwLock<HashMap<String, Arc<dyn Service>>>>,
-    methods: Arc<RwLock<HashMap<String, MethodHandler>>>,
+    services: ServiceMap,
+    methods: MethodMap,
 }
 
 impl ServiceRegistry {

@@ -132,8 +132,8 @@ async fn run_services(hub: ProcessHub) -> Result<()> {
 async fn run_client(hub: ProcessHub) -> Result<()> {
     println!("📞 Starting client...");
 
-    // Wait for services to be ready
-    sleep(Duration::from_secs(1)).await;
+    // Wait for services to be ready and service discovery
+    sleep(Duration::from_secs(2)).await;
 
     println!("🎯 Testing Calculator service with direct hub calls...");
 
@@ -187,11 +187,14 @@ async fn main() -> Result<()> {
     match args.get(1).map(|s| s.as_str()) {
         Some("services") => {
             let hub = ProcessHub::new("service_provider").await?;
+            println!("🔄 Services running... Press Ctrl+C to stop");
             run_services(hub).await
         }
         Some("client") => {
             let hub = ProcessHub::new("client").await?;
-            run_client(hub).await
+            run_client(hub).await?;
+            println!("✅ Client completed!");
+            Ok(())
         }
         _ => {
             println!("Usage: {} [services|client]", args[0]);

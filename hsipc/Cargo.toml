@@ -1,0 +1,30 @@
+[package]
+name = "hsipc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+ipmb = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+bincode = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+pin-project = { workspace = true }
+once_cell = { workspace = true }
+
+# Optional: re-export macros
+hsipc-macros = { path = "../hsipc-macros", optional = true }
+
+[features]
+default = ["macros"]
+macros = ["hsipc-macros"]
+runtime = ["tokio/rt-multi-thread"]

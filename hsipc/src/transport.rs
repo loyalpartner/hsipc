@@ -62,7 +62,9 @@ impl MessageBus {
     }
 
     async fn send_message(&self, msg: Message) -> Result<()> {
-        self.sender.send(msg).map_err(|_| Error::ConnectionLost)?;
+        self.sender
+            .send(msg)
+            .map_err(|_| Error::connection_msg("broadcast channel send failed"))?;
         Ok(())
     }
 
@@ -128,7 +130,10 @@ impl Transport for IpmbTransport {
 
     async fn recv(&self) -> Result<Message> {
         let mut receiver = self.local_receiver.write().await;
-        receiver.recv().await.ok_or(Error::ConnectionLost)
+        receiver
+            .recv()
+            .await
+            .ok_or(Error::connection_msg("message channel closed"))
     }
 
     async fn close(&self) -> Result<()> {
@@ -164,12 +169,17 @@ impl MockTransport {
 #[async_trait]
 impl Transport for MockTransport {
     async fn send(&self, msg: Message) -> Result<()> {
-        self.tx.send(msg).await.map_err(|_| Error::ConnectionLost)
+        self.tx
+            .send(msg)
+            .await
+            .map_err(|_| Error::connection_msg("mock transport send failed"))
     }
 
     async fn recv(&self) -> Result<Message> {
         let mut rx = self.rx.write().await;
-        rx.recv().await.ok_or(Error::ConnectionLost)
+        rx.recv()
+            .await
+            .ok_or(Error::connection_msg("mock transport recv failed"))
     }
 
     async fn close(&self) -> Result<()> {

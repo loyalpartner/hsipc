@@ -178,7 +178,7 @@ fn generate_service_impl(
             async fn handle(&self, method: &str, payload: Vec<u8>) -> ::hsipc::Result<Vec<u8>> {
                 match method {
                     #(#method_handlers)*
-                    _ => Err(::hsipc::Error::MethodNotFound(method.to_string())),
+                    _ => Err(::hsipc::Error::method_not_found(self.name(), method)),
                 }
             }
         }
@@ -233,11 +233,10 @@ pub fn service_impl_new(_args: TokenStream, input: ItemImpl) -> TokenStream {
             // Generate handler for this method
             let handler = quote! {
                 #method_name_str => {
-                    let req: #request_type = ::hsipc::bincode::deserialize(&payload)
-                        .map_err(|e| ::hsipc::Error::Serialization(e))?;
+                    let req: #request_type = ::hsipc::bincode::deserialize(&payload)?;
                     let resp = self.inner.#method_name(req).await?;
                     ::hsipc::bincode::serialize(&resp)
-                        .map_err(|e| ::hsipc::Error::Serialization(e))
+                        .map_err(Into::into)
                 }
             };
 
@@ -299,7 +298,7 @@ pub fn service_impl_new(_args: TokenStream, input: ItemImpl) -> TokenStream {
             async fn handle(&self, method: &str, payload: Vec<u8>) -> ::hsipc::Result<Vec<u8>> {
                 match method {
                     #(#method_handlers)*
-                    _ => Err(::hsipc::Error::MethodNotFound(method.to_string())),
+                    _ => Err(::hsipc::Error::method_not_found(self.name(), method)),
                 }
             }
         }
@@ -496,7 +495,7 @@ fn generate_trait_service_impl(
             async fn handle(&self, method: &str, payload: Vec<u8>) -> ::hsipc::Result<Vec<u8>> {
                 match method {
                     #(#method_handlers)*
-                    _ => Err(::hsipc::Error::MethodNotFound(method.to_string())),
+                    _ => Err(::hsipc::Error::method_not_found(self.name(), method)),
                 }
             }
         }
@@ -516,11 +515,10 @@ fn generate_trait_service_wrapper(
             let method_ident = quote::format_ident!("{}", method_name);
             quote! {
                 #method_name => {
-                    let params: #param_type = ::hsipc::bincode::deserialize(&payload)
-                        .map_err(|e| ::hsipc::Error::Serialization(e))?;
+                    let params: #param_type = ::hsipc::bincode::deserialize(&payload)?;
                     let result = self.inner.#method_ident(params).await?;
                     ::hsipc::bincode::serialize(&result)
-                        .map_err(|e| ::hsipc::Error::Serialization(e))
+                        .map_err(Into::into)
                 }
             }
         })
@@ -553,7 +551,7 @@ fn generate_trait_service_wrapper(
             async fn handle(&self, method: &str, payload: Vec<u8>) -> ::hsipc::Result<Vec<u8>> {
                 match method {
                     #(#method_handlers)*
-                    _ => Err(::hsipc::Error::MethodNotFound(method.to_string())),
+                    _ => Err(::hsipc::Error::method_not_found(self.name(), method)),
                 }
             }
         }

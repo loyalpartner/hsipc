@@ -35,7 +35,7 @@ impl Calculator {
     async fn divide(&self, params: (i32, i32)) -> Result<f64> {
         let (a, b) = params;
         if b == 0 {
-            return Err(hsipc::Error::Other(anyhow::anyhow!("Division by zero")));
+            return Err("Division by zero: denominator cannot be zero".into());
         }
         let result = a as f64 / b as f64;
         println!("🧮 Computing: {a} ÷ {b} = {result:.2}");

@@ -164,7 +164,7 @@ impl ProcessHub {
                                 process_name: hub_name.to_string(),
                                 registered_at: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
+                                    .unwrap_or_default()
                                     .as_millis()
                                     as u64,
                             };
@@ -230,7 +230,7 @@ impl ProcessHub {
             process_name: self.name.clone(),
             registered_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
         };
 
@@ -315,8 +315,8 @@ impl ProcessHub {
         // Wait for response with timeout
         let response = tokio::time::timeout(Duration::from_secs(30), rx)
             .await
-            .map_err(|_| Error::Timeout)?
-            .map_err(|_| Error::ConnectionLost)?;
+            .map_err(|_| Error::timeout("service call", 30000))?
+            .map_err(|_| Error::connection_msg("response channel closed"))?;
 
         match response.msg_type {
             MessageType::Response => {
@@ -325,9 +325,13 @@ impl ProcessHub {
             }
             MessageType::Error => {
                 let error_msg = String::from_utf8_lossy(&response.payload);
-                Err(Error::Other(anyhow::anyhow!("Remote error: {}", error_msg)))
+                Err(Error::runtime_msg(format!("Remote error: {error_msg}")))
             }
-            _ => Err(Error::Other(anyhow::anyhow!("Unexpected response type"))),
+            _ => Err(Error::protocol(
+                "Unexpected response type",
+                Some("Response or Error".to_string()),
+                Some(format!("{:?}", response.msg_type)),
+            )),
         }
     }
 
@@ -379,7 +383,8 @@ pub struct SyncProcessHub {
 impl SyncProcessHub {
     /// Create a new synchronous ProcessHub
     pub fn new(name: &str) -> Result<Self> {
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| Error::Runtime(e.to_string()))?;
+        let runtime = tokio::runtime::Runtime::new()
+            .map_err(|e| Error::runtime_msg(format!("Failed to create runtime: {e}")))?;
 
         let hub = runtime.block_on(ProcessHub::new(name))?;
 
@@ -439,7 +444,7 @@ impl Runtime {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .map_err(|e| Error::Runtime(e.to_string()))?;
+            .map_err(|e| Error::runtime_msg(format!("Failed to create runtime: {}", e)))?;
 
         Ok(Self { rt })
     }

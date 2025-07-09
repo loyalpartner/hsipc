@@ -73,7 +73,7 @@ impl Service for Calculator {
                 let result = a * b;
                 Ok(bincode::serialize(&result)?)
             }
-            _ => Err(Error::Other(anyhow::anyhow!("Unknown method: {}", method))),
+            _ => Err(Error::method_not_found("TestService", method)),
         }
     }
 }

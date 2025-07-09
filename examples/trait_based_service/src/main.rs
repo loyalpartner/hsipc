@@ -4,6 +4,7 @@
 //! for a more type-safe and polymorphic service design.
 
 use hsipc::{service_impl, service_trait, ProcessHub, Result, Service};
+use std::fmt;
 use tracing::info;
 
 // Define the service interface with typed client generation
@@ -12,6 +13,36 @@ trait Calculator {
     async fn add(&self, params: (i32, i32)) -> Result<i32>;
     async fn multiply(&self, params: (i32, i32)) -> Result<i32>;
     async fn factorial(&self, n: i32) -> Result<i64>;
+}
+
+// Custom error type for calculator operations
+#[derive(Debug)]
+enum CalcError {
+    NegativeFactorial,
+    Overflow,
+    DivisionByZero,
+}
+
+impl fmt::Display for CalcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CalcError::NegativeFactorial => {
+                write!(f, "Factorial is only defined for non-negative integers")
+            }
+            CalcError::Overflow => write!(f, "Arithmetic overflow occurred"),
+            CalcError::DivisionByZero => write!(f, "Division by zero"),
+        }
+    }
+}
+
+impl std::error::Error for CalcError {}
+
+// Convert custom error to hsipc::Error
+impl From<CalcError> for hsipc::Error {
+    fn from(err: CalcError) -> Self {
+        // Simple conversion - just use the error message
+        err.to_string().into()
+    }
 }
 
 // Basic implementation
@@ -32,13 +63,17 @@ impl Calculator for BasicCalculator {
     async fn factorial(&self, n: i32) -> Result<i64> {
         info!("BasicCalculator: Computing factorial of {n}");
         if n < 0 {
-            return Err(hsipc::Error::InvalidRequest(
-                "Negative factorial".to_string(),
-            ));
+            // Using custom error type
+            return Err(CalcError::NegativeFactorial.into());
         }
+
+        // Check for potential overflow
         let mut result = 1i64;
         for i in 1..=n {
-            result *= i as i64;
+            match result.checked_mul(i as i64) {
+                Some(r) => result = r,
+                None => return Err(CalcError::Overflow.into()),
+            }
         }
         Ok(result)
     }

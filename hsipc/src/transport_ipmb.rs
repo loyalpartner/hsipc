@@ -30,7 +30,7 @@ impl IpmbTransport {
 
         // Join the IPMB bus
         let (sender, receiver) = ipmb::join::<IpmbMessage, IpmbMessage>(options, None)
-            .map_err(|e| Error::Other(anyhow::anyhow!("IPMB join failed: {}", e)))?;
+            .map_err(|e| Error::transport_msg(format!("IPMB join failed: {e}")))?;
 
         tracing::info!("🚌 Joined IPMB bus as process: {}", process_name);
 
@@ -71,7 +71,7 @@ impl Transport for IpmbTransport {
                     tracing::warn!("🚨 IPMB send warning (non-fatal): {}", error_msg);
                     Ok(()) // Treat as non-fatal for now
                 } else {
-                    Err(Error::Other(anyhow::anyhow!(error_msg)))
+                    Err(Error::transport_msg(error_msg))
                 }
             }
         }
@@ -86,11 +86,11 @@ impl Transport for IpmbTransport {
             let timeout = std::time::Duration::from_secs(30);
             match receiver.recv(Some(timeout)) {
                 Ok(ipmb_msg) => Ok(ipmb_msg.payload.inner),
-                Err(e) => Err(Error::Other(anyhow::anyhow!("IPMB recv failed: {}", e))),
+                Err(e) => Err(Error::transport_msg(format!("IPMB recv failed: {e}"))),
             }
         })
         .await
-        .map_err(|e| Error::Other(anyhow::anyhow!("Async recv failed: {}", e)))?
+        .map_err(|e| Error::runtime("async recv failed", e))?
     }
 
     async fn close(&self) -> Result<()> {

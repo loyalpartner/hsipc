@@ -78,7 +78,7 @@ impl ServiceRegistry {
         let methods = self.methods.read().await;
         let handler = methods
             .get(method)
-            .ok_or_else(|| Error::MethodNotFound(method.to_string()))?;
+            .ok_or_else(|| Error::method_not_found("unknown", method))?;
 
         handler(payload).await
     }
@@ -140,6 +140,6 @@ impl<S: SyncService> Service for SyncServiceAdapter<S> {
 
         tokio::task::spawn_blocking(move || Ok(inner.as_ref().clone()))
             .await
-            .map_err(|e| Error::Runtime(e.to_string()))?
+            .map_err(|e| Error::runtime("task execution failed", e))?
     }
 }

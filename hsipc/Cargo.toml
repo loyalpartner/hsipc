@@ -31,7 +31,7 @@ serde_json = { workspace = true }
 log = { workspace = true }
 
 # Optional: re-export macros
-hsipc-macros = { path = "../hsipc-macros", version = "0.1.1", optional = true }
+hsipc-macros = { path = "../hsipc-macros", version = "0.1.2", optional = true }
 
 [features]
 default = ["macros"]

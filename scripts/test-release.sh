@@ -41,8 +41,12 @@ echo "✅ Build successful!"
 echo "📦 Testing package publishing (dry run)..."
 cd hsipc-macros
 cargo publish --dry-run
-cd ../hsipc
-cargo publish --dry-run
+cd ..
+
+# For hsipc, we need to test with --allow-dirty since hsipc-macros doesn't exist on crates.io yet
+echo "📦 Testing hsipc package publishing (dry run with --allow-dirty)..."
+cd hsipc
+cargo publish --dry-run --allow-dirty
 cd ..
 
 echo "✅ Packages can be published!"

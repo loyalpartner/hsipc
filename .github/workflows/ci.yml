@@ -59,13 +59,27 @@ jobs:
 
     - name: Test examples
       run: |
+        # Test trait_based_service demo
         cd examples/trait_based_service && cargo run demo
-        cd ../request_response && timeout 10s cargo run server &
+        
+        # Test request_response
+        cd ../request_response
+        timeout 10s cargo run server &
+        SERVER_PID=$!
         sleep 2
-        cd ../request_response && cargo run client
-        cd ../pubsub_events && timeout 10s cargo run subscriber &
+        cargo run client
+        kill $SERVER_PID 2>/dev/null || true
+        
+        # Test pubsub_events
+        cd ../pubsub_events
+        timeout 10s cargo run subscriber &
+        SUB_PID=$!
         sleep 2
-        cd ../pubsub_events && cargo run publisher
+        cargo run publisher
+        kill $SUB_PID 2>/dev/null || true
+        
+        # Ensure all background processes are cleaned up
+        pkill -f "target/debug" || true
 
   benchmark:
     name: Benchmark Tests

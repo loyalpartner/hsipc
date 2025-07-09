@@ -12,6 +12,8 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       upload_url: ${{ steps.release.outputs.upload_url }}
     steps:
@@ -23,12 +25,10 @@ jobs:
     
     - name: Create Release
       id: release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.get_version.outputs.VERSION }}
-        release_name: hsipc ${{ steps.get_version.outputs.VERSION }}
+        name: hsipc ${{ steps.get_version.outputs.VERSION }}
         draft: false
         prerelease: false
         body: |
@@ -52,6 +52,8 @@ jobs:
   publish-crates:
     name: Publish to crates.io
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: create-release
     steps:
     - uses: actions/checkout@v4
@@ -91,6 +93,10 @@ jobs:
   generate-docs:
     name: Generate Documentation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     needs: publish-crates
     steps:
     - uses: actions/checkout@v4

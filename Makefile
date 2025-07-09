@@ -1,4 +1,4 @@
-.PHONY: quick full check watch
+.PHONY: quick full check watch multiprocess
 
 # 快速验证（30秒）
 quick:
@@ -34,6 +34,11 @@ fmt:
 clippy:
 	@echo "🔧 代码质量检查..."
 	@cargo clippy --all-targets --fix
+
+# 多进程通信测试
+multiprocess:
+	@echo "🚀 多进程通信测试..."
+	@./scripts/multiprocess_test.sh
 
 # 清理构建缓存
 clean:

@@ -4,7 +4,7 @@
 //! for a more type-safe and polymorphic service design.
 
 use hsipc::{service_impl, service_trait, ProcessHub, Result, Service};
-use log::info;
+use tracing::info;
 
 // Define the service interface with typed client generation
 #[service_trait]
@@ -135,7 +135,7 @@ async fn run_client() -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     let args: Vec<String> = std::env::args().collect();
 

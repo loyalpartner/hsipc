@@ -2,7 +2,7 @@
 
 - 文档放在 docs 目录
 - 查看 @README.md 了解项目概述
-- git 工作流程 @docs/git-instructions.md
+- git 工作流程 @docs/git-instructions.md, 按照这个流程开发
 - 测试流程 @docs/TESTING.md
 
 - Readme.md 使用中文

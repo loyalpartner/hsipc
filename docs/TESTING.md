@@ -60,6 +60,9 @@ make quick
 
 # 4. 完整验证（5分钟）
 make full
+
+# 5. 多进程通信测试
+make multiprocess
 ```
 
 ## 📋 快速验证工具
@@ -67,7 +70,7 @@ make full
 ### Makefile 配置
 
 ```makefile
-.PHONY: quick full check watch
+.PHONY: quick full check watch multiprocess
 
 # 快速验证（30秒）
 quick:
@@ -93,9 +96,23 @@ check:
 watch:
 	@echo "👀 开始实时监控..."
 	@cargo watch -x 'run --example trait_based_service demo'
+
+# 多进程通信测试
+multiprocess:
+	@echo "🚀 多进程通信测试..."
+	@./scripts/multiprocess_test.sh
 ```
 
 ## 🎯 智能测试选择
+
+### 测试脚本组织
+
+```
+scripts/
+├── quick_test.sh        # 快速测试脚本
+├── smart_test.sh        # 智能测试选择
+└── multiprocess_test.sh # 多进程通信测试
+```
 
 ### 按模块选择测试
 

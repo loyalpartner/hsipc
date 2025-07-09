@@ -29,13 +29,6 @@ type ServiceMap = Arc<RwLock<HashMap<String, Arc<dyn Service>>>>;
 /// Type alias for method map to reduce complexity  
 type MethodMap = Arc<RwLock<HashMap<String, MethodHandler>>>;
 
-/// Global service registry shared across all hubs
-static GLOBAL_SERVICES: once_cell::sync::Lazy<ServiceMap> =
-    once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
-
-static GLOBAL_METHODS: once_cell::sync::Lazy<MethodMap> =
-    once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
-
 /// Service registry for managing services
 pub struct ServiceRegistry {
     services: ServiceMap,
@@ -45,8 +38,8 @@ pub struct ServiceRegistry {
 impl ServiceRegistry {
     pub fn new() -> Self {
         Self {
-            services: GLOBAL_SERVICES.clone(),
-            methods: GLOBAL_METHODS.clone(),
+            services: Arc::new(RwLock::new(HashMap::new())),
+            methods: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 

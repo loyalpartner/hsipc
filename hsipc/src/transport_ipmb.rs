@@ -66,7 +66,7 @@ impl Transport for IpmbTransport {
             Err(e) => {
                 // Log the error but don't fail completely for "Invalid argument" errors
                 // as they seem to be related to IPMB internal socket handling
-                let error_msg = format!("IPMB send failed: {}", e);
+                let error_msg = format!("IPMB send failed: {e}");
                 if error_msg.contains("Invalid argument") {
                     tracing::warn!("🚨 IPMB send warning (non-fatal): {}", error_msg);
                     Ok(()) // Treat as non-fatal for now

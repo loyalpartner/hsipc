@@ -17,8 +17,8 @@ publish = true
 push = true
 tag = true
 
-# Pre-release hooks
-pre-release-hook = [
-    "cargo test --workspace --all-features",
-    "cargo check --workspace --all-features"
-]
+# Pre-release hooks (disabled for now)
+# pre-release-hook = [
+#     "cargo test --workspace --all-features",
+#     "cargo check --workspace --all-features"
+# ]

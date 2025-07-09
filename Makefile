@@ -4,7 +4,7 @@
 quick:
 	@echo "🚀 Quick verification..."
 	@cargo check --all-targets || (echo "❌ Syntax check failed"; exit 1)
-	@cargo run --example rpc_system_demo demo || (echo "❌ Core functionality failed"; exit 1)
+	@cd examples/trait_based_service && cargo run demo || (echo "❌ Core functionality failed"; exit 1)
 	@echo "✅ Quick verification passed!"
 
 # Full testing (5 minutes) - Pre-commit verification
@@ -23,7 +23,7 @@ check:
 # Core RPC demo (30 seconds) - Example-driven testing
 demo:
 	@echo "🎬 Running RPC system demo..."
-	@cargo run --example rpc_system_demo demo
+	@cd examples/trait_based_service && cargo run demo
 
 # Integration test (focused testing)
 integration:
@@ -33,7 +33,7 @@ integration:
 # Real-time monitoring
 watch:
 	@echo "👀 Starting real-time monitoring..."
-	@cargo watch -x 'run --example rpc_system_demo demo'
+	@cd examples/trait_based_service && cargo watch -x 'run demo'
 
 # 格式化代码
 fmt:

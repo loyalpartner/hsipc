@@ -31,7 +31,6 @@ pin-project = { workspace = true }
 once_cell = { workspace = true }
 type-uuid = { workspace = true }
 serde_json = { workspace = true }
-log = { workspace = true }
 
 # Optional: re-export macros
 hsipc-macros = { path = "../hsipc-macros", optional = true }

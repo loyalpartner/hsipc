@@ -329,7 +329,7 @@ fn generate_subscription_client_method(
     if params.len() == 1 {
         let param_type = params[0];
         quote! {
-            pub async fn #method_name(&self, params: #param_type) -> hsipc::Result<()> {
+            pub async fn #method_name(&self, params: #param_type) -> hsipc::Result<hsipc::RpcSubscription<hsipc::serde_json::Value>> {
                 // Serialize parameters
                 let serialized_params = bincode::serialize(&params)?;
 
@@ -341,14 +341,21 @@ fn generate_subscription_client_method(
                     serialized_params,
                 );
 
-                // Send the request (for now, just send and return)
-                // TODO: Handle subscription response and return RpcSubscription
-                Ok(())
+                // For now, create a dummy subscription until we implement the full protocol
+                let (tx, rx) = hsipc::tokio::sync::mpsc::unbounded_channel();
+                let subscription = hsipc::RpcSubscription::new(hsipc::uuid::Uuid::new_v4(), rx);
+
+                // Keep the sender alive to prevent channel from closing immediately
+                // This is a temporary solution until we implement the full protocol
+                std::mem::forget(tx);
+
+                // TODO: Send the request and handle subscription response properly
+                Ok(subscription)
             }
         }
     } else if params.is_empty() {
         quote! {
-            pub async fn #method_name(&self) -> hsipc::Result<()> {
+            pub async fn #method_name(&self) -> hsipc::Result<hsipc::RpcSubscription<hsipc::serde_json::Value>> {
                 // Send subscription request with no parameters
                 let request_msg = hsipc::Message::subscription_request(
                     self.hub.name().to_string(),
@@ -357,9 +364,16 @@ fn generate_subscription_client_method(
                     vec![], // No parameters
                 );
 
-                // Send the request (for now, just send and return)
-                // TODO: Handle subscription response and return RpcSubscription
-                Ok(())
+                // For now, create a dummy subscription until we implement the full protocol
+                let (tx, rx) = hsipc::tokio::sync::mpsc::unbounded_channel();
+                let subscription = hsipc::RpcSubscription::new(hsipc::uuid::Uuid::new_v4(), rx);
+
+                // Keep the sender alive to prevent channel from closing immediately
+                // This is a temporary solution until we implement the full protocol
+                std::mem::forget(tx);
+
+                // TODO: Send the request and handle subscription response properly
+                Ok(subscription)
             }
         }
     } else {
@@ -369,7 +383,7 @@ fn generate_subscription_client_method(
             .collect();
 
         quote! {
-            pub async fn #method_name(&self, #(#param_names: #params),*) -> hsipc::Result<()> {
+            pub async fn #method_name(&self, #(#param_names: #params),*) -> hsipc::Result<hsipc::RpcSubscription<hsipc::serde_json::Value>> {
                 // Serialize parameters as tuple
                 let params_tuple = (#(#param_names),*);
                 let serialized_params = bincode::serialize(&params_tuple)?;
@@ -382,9 +396,16 @@ fn generate_subscription_client_method(
                     serialized_params,
                 );
 
-                // Send the request (for now, just send and return)
-                // TODO: Handle subscription response and return RpcSubscription
-                Ok(())
+                // For now, create a dummy subscription until we implement the full protocol
+                let (tx, rx) = hsipc::tokio::sync::mpsc::unbounded_channel();
+                let subscription = hsipc::RpcSubscription::new(hsipc::uuid::Uuid::new_v4(), rx);
+
+                // Keep the sender alive to prevent channel from closing immediately
+                // This is a temporary solution until we implement the full protocol
+                std::mem::forget(tx);
+
+                // TODO: Send the request and handle subscription response properly
+                Ok(subscription)
             }
         }
     }

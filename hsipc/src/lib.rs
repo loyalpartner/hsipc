@@ -108,6 +108,11 @@ pub use hub::{Service, ServiceRegistry};
 pub use message::{Message, Request, Response};
 pub use subscription::{PendingSubscriptionSink, RpcSubscription, SubscriptionSink};
 
+// Re-export external dependencies needed by generated code
+pub use serde_json;
+pub use tokio;
+pub use uuid;
+
 // Type alias for subscription results
 pub type SubscriptionResult = Result<()>;
 

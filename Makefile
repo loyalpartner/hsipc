@@ -1,24 +1,29 @@
-.PHONY: quick full check watch multiprocess demo integration benchmark bench-quick bench-core
+.PHONY: quick full check watch multiprocess demo integration benchmark bench-quick bench-core tdd tdd-watch tdd-core smart-test
 
 # Quick verification (30 seconds) - Primary development command
 quick:
 	@echo "🚀 Quick verification..."
-	@cargo check --all-targets || (echo "❌ Syntax check failed"; exit 1)
-	@cd examples/trait_based_service && cargo run demo || (echo "❌ Core functionality failed"; exit 1)
+	@echo "  → Checking syntax..."
+	@cargo check --all-targets --quiet || (echo "❌ Syntax check failed"; exit 1)
+	@echo "  → Running core functionality..."
+	@cd examples/trait_based_service && cargo run demo > /dev/null 2>&1 || (echo "❌ Core functionality failed"; exit 1)
 	@echo "✅ Quick verification passed!"
 
 # Full testing (5 minutes) - Pre-commit verification
 full:
 	@echo "🧪 Full testing..."
-	@cargo test --all || (echo "❌ Tests failed"; exit 1)
-	@cargo clippy --all-targets || (echo "❌ Code quality check failed"; exit 1)
+	@echo "  → Running all tests..."
+	@cargo test --all --quiet || (echo "❌ Tests failed"; exit 1)
+	@echo "  → Code quality check..."
+	@cargo clippy --all-targets --quiet || (echo "❌ Code quality check failed"; exit 1)
+	@echo "  → Format check..."
 	@cargo fmt --check || (echo "❌ Code format check failed"; exit 1)
 	@echo "✅ Full testing passed!"
 
 # Syntax check (2 seconds) - Fastest feedback
 check:
 	@echo "🔍 Syntax check..."
-	@cargo check --all-targets
+	@cargo check --all-targets --quiet && echo "✅ Syntax check passed!"
 
 # Core RPC demo (30 seconds) - Example-driven testing
 demo:
@@ -29,6 +34,30 @@ demo:
 integration:
 	@echo "🔧 Running integration tests..."
 	@cargo test --test integration
+
+# TDD development cycle (<10 seconds) - Core functionality only
+tdd:
+	@echo "🧪 TDD cycle..."
+	@echo "  → Checking syntax..."
+	@cargo check --all-targets --quiet || (echo "❌ Syntax check failed"; exit 1)
+	@echo "  → Running core tests..."
+	@cargo test --test rpc_tdd_test --quiet || (echo "❌ Core tests failed"; exit 1)
+	@echo "✅ TDD cycle passed!"
+
+# TDD core tests only (fastest feedback)
+tdd-core:
+	@echo "🎯 TDD core tests..."
+	@cargo test --test rpc_tdd_test --quiet
+
+# TDD with real-time monitoring
+tdd-watch:
+	@echo "👀 Starting TDD monitoring..."
+	@cargo watch -x 'test --test rpc_tdd_test --quiet'
+
+# Smart test selection based on changed files
+smart-test:
+	@echo "🤖 Running smart test selection..."
+	@./scripts/smart_test.sh
 
 # Real-time monitoring
 watch:

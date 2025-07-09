@@ -32,7 +32,8 @@
 | 层级 | 目的 | 执行时间 | 命令 |
 |------|------|----------|------|
 | 语法检查 | 快速发现编译错误 | 2秒 | `cargo check` |
-| 示例验证 | 验证核心功能正常 | 30秒 | `cargo run --example X demo` |
+| TDD循环 | 核心功能快速验证 | 10秒 | `make tdd` |
+| 示例验证 | 验证核心功能正常 | 30秒 | `cd examples/X && cargo run demo` |
 | 核心测试 | 验证关键场景 | 2分钟 | `cargo test integration` |
 | 完整测试 | 全面质量保证 | 5分钟 | `cargo test --all` |
 
@@ -41,9 +42,9 @@
 ### 微迭代循环（推荐）
 
 ```
-编写代码 → cargo check → 运行相关示例 → 继续开发
-     ↑                                           ↓
-   快速修复 ←―――――――――― 如果有问题 ←――――――――――――――
+编写代码 → cargo check → make tdd → 运行相关示例 → 继续开发
+     ↑                                                    ↓
+   快速修复 ←―――――――――――――― 如果有问题 ←――――――――――――――――――
 ```
 
 ### 日常开发命令
@@ -52,18 +53,26 @@
 # 1. 最快语法检查（2秒）
 cargo check --all-targets
 
-# 2. 功能验证（30秒）
-cargo run --example trait_based_service demo    # 验证 trait-based 服务
-cargo run --example request_response client     # 验证 RPC 功能
-cargo run --example pubsub_events publisher     # 验证事件系统
+# 2. TDD开发循环（10秒）
+make tdd           # 语法检查 + 核心测试
+make tdd-core      # 只运行核心测试
+make tdd-watch     # 实时监控TDD测试
 
-# 3. 快速验证（1分钟）
+# 3. 功能验证（30秒）
+cd examples/trait_based_service && cargo run demo    # 验证 trait-based 服务
+cd examples/request_response && cargo run client     # 验证 RPC 功能
+cd examples/pubsub_events && cargo run publisher     # 验证事件系统
+
+# 4. 快速验证（1分钟）
 make quick
 
-# 4. 完整验证（5分钟）
+# 5. 完整验证（5分钟）
 make full
 
-# 5. 多进程通信测试
+# 6. 智能测试选择（推荐）
+make smart-test    # 根据修改内容自动选择测试
+
+# 7. 多进程通信测试
 make multiprocess
 ```
 
@@ -72,13 +81,13 @@ make multiprocess
 ### Makefile 配置
 
 ```makefile
-.PHONY: quick full check watch multiprocess
+.PHONY: quick full check watch multiprocess tdd tdd-core tdd-watch
 
 # 快速验证（30秒）
 quick:
 	@echo "🚀 快速验证..."
 	@cargo check --all-targets || (echo "❌ 语法检查失败"; exit 1)
-	@cargo run --example trait_based_service demo || (echo "❌ 核心功能失败"; exit 1)
+	@cd examples/trait_based_service && cargo run demo || (echo "❌ 核心功能失败"; exit 1)
 	@echo "✅ 快速验证通过！"
 
 # 完整测试（5分钟）
@@ -97,39 +106,87 @@ check:
 # 实时监控
 watch:
 	@echo "👀 开始实时监控..."
-	@cargo watch -x 'run --example trait_based_service demo'
+	@cd examples/trait_based_service && cargo watch -x 'run demo'
 
 # 多进程通信测试
 multiprocess:
 	@echo "🚀 多进程通信测试..."
 	@./scripts/multiprocess_test.sh
+
+# TDD开发循环（10秒）
+tdd:
+	@echo "🧪 TDD cycle..."
+	@cargo check --all-targets || (echo "❌ Syntax check failed"; exit 1)
+	@cargo test --test rpc_tdd_test --quiet || (echo "❌ Core tests failed"; exit 1)
+	@echo "✅ TDD cycle passed!"
+
+# TDD核心测试
+tdd-core:
+	@echo "🎯 TDD core tests..."
+	@cargo test --test rpc_tdd_test --quiet
+
+# TDD实时监控
+tdd-watch:
+	@echo "👀 Starting TDD monitoring..."
+	@cargo watch -x 'test --test rpc_tdd_test --quiet'
+
+# 智能测试选择
+smart-test:
+	@echo "🤖 Running smart test selection..."
+	@./scripts/smart_test.sh
 ```
 
 ## 🎯 智能测试选择
+
+### 自动测试选择策略
+
+智能测试选择系统根据修改的文件自动选择最合适的测试策略，提高开发效率：
+
+| 修改类型 | 检测条件 | 执行策略 |
+|---------|---------|---------|
+| 宏代码 | `hsipc-macros/` | `make tdd-core` |
+| RPC系统 | `rpc` 关键词 | `make tdd` + trait示例 |
+| 服务模块 | `service`, `hub` | 服务示例 + 集成测试 |
+| 事件系统 | `event`, `subscription` | 事件示例 + 订阅测试 |
+| 传输层 | `transport` | 传输层单元测试 |
+| 示例代码 | `examples/` | 对应示例验证 |
+| 测试文件 | `test` | 相关测试套件 |
+| 文档 | `docs/`, `README` | 语法检查 |
+| 构建文件 | `Cargo.toml`, `Makefile` | 构建验证 |
+
+### 使用方法
+
+```bash
+# 推荐：智能测试选择（根据修改自动选择）
+make smart-test
+
+# 或者直接运行脚本
+./scripts/smart_test.sh
+```
 
 ### 测试脚本组织
 
 ```
 scripts/
 ├── quick_test.sh        # 快速测试脚本
-├── smart_test.sh        # 智能测试选择
+├── smart_test.sh        # 智能测试选择（已优化）
 └── multiprocess_test.sh # 多进程通信测试
 ```
 
-### 按模块选择测试
+### 智能选择示例
 
 ```bash
-# 根据修改的文件选择测试
-if [[ $(git diff --name-only) == *"service"* ]]; then
-    echo "🔧 检测到服务模块修改，运行服务测试..."
-    cargo run --example trait_based_service demo
-elif [[ $(git diff --name-only) == *"event"* ]]; then
-    echo "📡 检测到事件模块修改，运行事件测试..."
-    cargo run --example pubsub_events publisher
-else
-    echo "🔍 运行通用测试..."
-    make quick
-fi
+# 修改宏代码时
+📂 修改的文件: hsipc-macros/src/rpc.rs
+🔧 检测到宏代码修改，运行TDD核心测试...
+
+# 修改RPC相关代码时  
+📂 修改的文件: hsipc/src/hub.rs
+🎯 检测到RPC相关修改，运行RPC测试...
+
+# 修改示例代码时
+📂 修改的文件: examples/trait_based_service/src/main.rs
+📚 检测到示例修改，运行示例验证...
 ```
 
 ## 🔧 开发环境配置
@@ -172,7 +229,7 @@ cargo install cargo-watch
 cargo watch -x check
 
 # 实时示例验证
-cargo watch -x 'run --example trait_based_service demo'
+cd examples/trait_based_service && cargo watch -x 'run demo'
 ```
 
 ## 🎪 核心测试场景
@@ -215,7 +272,7 @@ async fn smoke_test_trait_based_service() {
 3. **功能验证**
    ```bash
    # 验证当前功能
-   cargo run --example trait_based_service demo
+   cd examples/trait_based_service && cargo run demo
    ```
 
 4. **阶段性验证**
@@ -235,7 +292,8 @@ async fn smoke_test_trait_based_service() {
 | 操作 | 目标时间 | 命令 |
 |------|----------|------|
 | 语法检查 | 2秒 | `cargo check` |
-| 示例验证 | 30秒 | `cargo run --example X demo` |
+| TDD循环 | 10秒 | `make tdd` |
+| 示例验证 | 30秒 | `cd examples/X && cargo run demo` |
 | 快速验证 | 1分钟 | `make quick` |
 | 完整测试 | 5分钟 | `make full` |
 

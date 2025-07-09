@@ -1,4 +1,4 @@
-.PHONY: quick full check watch multiprocess
+.PHONY: quick full check watch multiprocess benchmark bench-quick bench-core
 
 # 快速验证（30秒）
 quick:
@@ -39,6 +39,21 @@ clippy:
 multiprocess:
 	@echo "🚀 多进程通信测试..."
 	@./scripts/multiprocess_test.sh
+
+# 性能基准测试
+benchmark:
+	@echo "🚀 运行性能基准测试..."
+	@./scripts/benchmark.sh
+
+# 快速性能测试
+bench-quick:
+	@echo "🧪 快速性能测试..."
+	@cd hsipc && cargo bench --bench simple_benchmarks
+
+# 核心性能测试
+bench-core:
+	@echo "🔧 核心性能测试..."
+	@cd hsipc && cargo bench --bench simple_benchmarks
 
 # 清理构建缓存
 clean:

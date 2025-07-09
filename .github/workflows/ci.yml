@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, beta, nightly]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: rustfmt, clippy
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+      if: matrix.rust == 'stable'
+
+    - name: Run clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      if: matrix.rust == 'stable'
+
+    - name: Build
+      run: cargo build --verbose --all-features
+
+    - name: Run tests
+      run: cargo test --verbose --all-features
+
+    - name: Test examples
+      run: |
+        cd examples/trait_based_service && cargo run demo
+        cd ../request_response && timeout 10s cargo run server &
+        sleep 2
+        cd ../request_response && cargo run client
+        cd ../pubsub_events && timeout 10s cargo run subscriber &
+        sleep 2
+        cd ../pubsub_events && cargo run publisher
+
+  benchmark:
+    name: Benchmark Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: stable
+    
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run benchmarks
+      run: |
+        cd hsipc
+        cargo bench --bench simple_benchmarks
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: target/criterion/
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: stable
+    
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+    
+    - name: Security audit
+      run: cargo audit
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: stable
+        components: llvm-tools-preview
+    
+    - name: Install cargo-llvm-cov
+      run: cargo install cargo-llvm-cov
+    
+    - name: Generate coverage report
+      run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: lcov.info
+        fail_ci_if_error: true

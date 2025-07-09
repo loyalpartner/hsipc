@@ -9,9 +9,16 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <you@example.com>"]
+authors = ["loyalpartner <lee@yizhisec.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/yourusername/hsipc"
+repository = "https://github.com/loyalpartner/hsipc"
+homepage = "https://github.com/loyalpartner/hsipc"
+documentation = "https://docs.rs/hsipc"
+description = "High-performance inter-process communication framework in Rust"
+keywords = ["ipc", "rpc", "async", "communication", "framework"]
+categories = ["network-programming", "concurrency", "asynchronous"]
+readme = "README.md"
+rust-version = "1.70"
 
 [workspace.dependencies]
 tokio = { version = "1.35", features = ["full"] }

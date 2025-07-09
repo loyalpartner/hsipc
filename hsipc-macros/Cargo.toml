@@ -5,6 +5,12 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Procedural macros for hsipc - High-performance inter-process communication framework"
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
 
 [lib]
 proc-macro = true

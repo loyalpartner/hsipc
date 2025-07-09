@@ -283,6 +283,12 @@ git commit -m "feat: 实现新的服务功能
 Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
 
+# 9. 合并到主分支
+```
+git checkout master # or main
+git rebase feature/claude-new-feature
+```
+
 ### 2. 问题修复流程
 ```bash
 # 1. 问题分析
@@ -305,6 +311,12 @@ git commit -m "fix: 修复多进程通信时序问题
 🤖 Generated with Claude Code
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
+```
+
+# 9. 合并到主分支
+```
+git checkout master # or main
+git rebase feature/claude-new-feature
 ```
 
 ### 3. 文档更新流程

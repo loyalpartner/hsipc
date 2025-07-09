@@ -115,3 +115,42 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./target/doc
         destination_dir: docs
+
+  benchmark:
+    name: Release Benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs: publish-crates
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: stable
+    
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run benchmarks
+      run: |
+        cd hsipc
+        cargo bench --bench simple_benchmarks
+    
+    - name: Get the version
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-${{ steps.get_version.outputs.VERSION }}
+        path: target/criterion/
+        retention-days: 90

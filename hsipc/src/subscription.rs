@@ -40,7 +40,7 @@ impl PendingSubscriptionSink {
             .ok_or_else(|| Error::runtime_msg("Subscription already accepted or rejected"))?;
 
         // TODO: Send accept message to client through ProcessHub
-        log::trace!(
+        tracing::trace!(
             "Subscription {} accepted for method {}",
             self.id,
             self.method
@@ -55,7 +55,7 @@ impl PendingSubscriptionSink {
     /// the PendingSubscriptionSink.
     pub async fn reject(self, reason: String) -> Result<()> {
         // TODO: Send reject message to client through ProcessHub
-        log::trace!(
+        tracing::trace!(
             "Subscription {} rejected for method {}: {}",
             self.id,
             self.method,
@@ -184,7 +184,7 @@ where
     /// subscription should be canceled.
     pub async fn cancel(self) -> Result<()> {
         // TODO: Send cancel message to server through ProcessHub
-        log::trace!("Subscription {} canceled", self.id);
+        tracing::trace!("Subscription {} canceled", self.id);
 
         // Closing the receiver will signal the server that we're done
         drop(self.receiver);

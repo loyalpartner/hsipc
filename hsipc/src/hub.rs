@@ -29,6 +29,12 @@ pub struct ServiceRegistry {
     services: Arc<RwLock<std::collections::HashMap<String, Arc<dyn Service>>>>,
 }
 
+impl Default for ServiceRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServiceRegistry {
     pub fn new() -> Self {
         Self {

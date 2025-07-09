@@ -231,7 +231,7 @@ fn generate_rpc_client_method(
     } else {
         // Multiple parameters
         let param_names: Vec<syn::Ident> = (0..params.len())
-            .map(|i| syn::Ident::new(&format!("p{}", i), method_name.span()))
+            .map(|i| syn::Ident::new(&format!("p{i}"), method_name.span()))
             .collect();
 
         if is_async {
@@ -361,7 +361,7 @@ fn generate_subscription_client_method(
     } else {
         // Multiple parameters
         let param_names: Vec<syn::Ident> = (0..params.len())
-            .map(|i| syn::Ident::new(&format!("p{}", i), method_name.span()))
+            .map(|i| syn::Ident::new(&format!("p{i}"), method_name.span()))
             .collect();
 
         quote! {
@@ -393,8 +393,8 @@ pub fn rpc_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let config = parse_rpc_args(&args_str);
 
     let trait_name = &input.ident;
-    let service_name = syn::Ident::new(&format!("{}Service", trait_name), trait_name.span());
-    let client_name = syn::Ident::new(&format!("{}Client", trait_name), trait_name.span());
+    let service_name = syn::Ident::new(&format!("{trait_name}Service"), trait_name.span());
+    let client_name = syn::Ident::new(&format!("{trait_name}Client"), trait_name.span());
 
     let namespace = &config.namespace;
 
@@ -455,7 +455,7 @@ pub fn rpc_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                         method_name,
                         &rpc_method_name,
                         &params,
-                        &namespace,
+                        namespace,
                         return_type,
                     )
                 }
@@ -467,7 +467,7 @@ pub fn rpc_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                         &rpc_method_name,
                         &params,
                         &client_return_type,
-                        &namespace,
+                        namespace,
                         is_async,
                     )
                 }

@@ -148,9 +148,9 @@ mod tests {
             }
             Err(e) => {
                 // If it fails, let's see why
-                println!("❌ RPC call failed: {}", e);
-                println!("🔍 Error details: {:?}", e);
-                panic!("RPC call failed: {}", e);
+                println!("❌ RPC call failed: {e}");
+                println!("🔍 Error details: {e:?}");
+                panic!("RPC call failed: {e}");
             }
         }
     }
@@ -183,7 +183,7 @@ mod tests {
         let client = CalculatorClient::new(hub);
 
         // Subscription method call
-        let _subscription = client
+        client
             .subscribe_events(Some("test".to_string()))
             .await
             .unwrap();
@@ -240,7 +240,7 @@ mod tests {
         // The full subscription protocol implementation will be completed later
         match result {
             Ok(_) => println!("✅ Subscription protocol basic flow succeeded"),
-            Err(e) => println!("ℹ️  Subscription protocol error (expected): {}", e),
+            Err(e) => println!("ℹ️  Subscription protocol error (expected): {e}"),
         }
     }
 
@@ -267,7 +267,7 @@ mod tests {
         }
 
         // Wait for all calls to complete
-        for (_i, handle) in handles.into_iter().enumerate() {
+        for handle in handles.into_iter() {
             let _response = handle.await.unwrap();
             // For now, just verify all calls succeed
         }

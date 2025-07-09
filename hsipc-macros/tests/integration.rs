@@ -158,7 +158,7 @@ mod tests {
         assert!(result.is_err());
 
         // 6. 测试订阅方法
-        let _result = client
+        client
             .subscribe_test_events(Some("filter".to_string()))
             .await
             .unwrap();
@@ -236,7 +236,7 @@ mod tests {
         // 验证调用成功（目前只是基本协议测试）
         match result {
             Ok(_) => println!("✅ Subscription signature transformation working!"),
-            Err(e) => println!("ℹ️  Expected subscription protocol limitation: {}", e),
+            Err(e) => println!("ℹ️  Expected subscription protocol limitation: {e}"),
         }
     }
 }

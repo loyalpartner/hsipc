@@ -95,6 +95,12 @@ pub struct CalculatorImpl {
     start_time: std::time::Instant,
 }
 
+impl Default for CalculatorImpl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CalculatorImpl {
     pub fn new() -> Self {
         Self {
@@ -220,13 +226,13 @@ async fn run_demo() -> hsipc::Result<()> {
     // 2. Test sync method
     println!("✅ Testing sync method...");
     let multiply_result = client.multiply(6, 7)?;
-    println!("   Multiply result: {}", multiply_result);
+    println!("   Multiply result: {multiply_result}");
     assert_eq!(multiply_result, 42);
 
     // 3. Test multi-parameter method
     println!("✅ Testing multi-parameter method...");
     let power_result = client.power(2.0, 3.0).await?;
-    println!("   Power result: {}", power_result);
+    println!("   Power result: {power_result}");
     assert_eq!(power_result, 8.0);
 
     // 4. Test custom error type - success case
@@ -243,7 +249,7 @@ async fn run_demo() -> hsipc::Result<()> {
     // 5. Test custom error type - error case
     println!("✅ Testing custom error type (error)...");
     let divide_error = client.divide(CalculationRequest { x: 10.0, y: 0.0 }).await;
-    println!("   Expected error: {:?}", divide_error);
+    println!("   Expected error: {divide_error:?}");
     assert!(divide_error.is_err());
 
     // 6. Test no parameter method
@@ -256,13 +262,13 @@ async fn run_demo() -> hsipc::Result<()> {
 
     // 7. Test subscription method
     println!("✅ Testing subscription method...");
-    let _sub_result = client.subscribe_logs(Some("info".to_string())).await?;
+    client.subscribe_logs(Some("info".to_string())).await?;
     println!("   Subscription created successfully");
 
     // 8. Test complex calculation with timeout
     println!("✅ Testing complex calculation...");
     let complex_result = client.complex_calculation(1000).await?;
-    println!("   Complex calculation result: {}", complex_result);
+    println!("   Complex calculation result: {complex_result}");
 
     println!("\n🎉 All RPC features working correctly!");
     println!("📊 Demo completed in < 30 seconds");
@@ -303,7 +309,7 @@ async fn run_client() -> hsipc::Result<()> {
     println!("Remote add: {}", result.result);
 
     let multiply_result = client.multiply(12, 13)?;
-    println!("Remote multiply: {}", multiply_result);
+    println!("Remote multiply: {multiply_result}");
 
     let status = client.get_status().await?;
     println!("Remote status: {} v{}", status.service, status.version);

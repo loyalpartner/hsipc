@@ -233,7 +233,7 @@ impl Message {
             msg_type: MessageType::SubscriptionRequest,
             source,
             target,
-            topic: Some(format!("subscription.{}", method)),
+            topic: Some(format!("subscription.{method}")),
             payload,
             correlation_id: Some(subscription_msg.id()),
             metadata: MessageMetadata::default(),

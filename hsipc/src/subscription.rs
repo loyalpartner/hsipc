@@ -66,8 +66,7 @@ impl PendingSubscriptionSink {
         drop(self.sender);
 
         Err(Error::runtime_msg(format!(
-            "Subscription rejected: {}",
-            reason
+            "Subscription rejected: {reason}"
         )))
     }
 
@@ -118,7 +117,7 @@ impl SubscriptionSink {
     /// before sending it.
     pub async fn send_value<T: Serialize>(&self, value: T) -> Result<()> {
         let json_value = serde_json::to_value(value)
-            .map_err(|e| Error::runtime_msg(format!("Failed to serialize value: {}", e)))?;
+            .map_err(|e| Error::runtime_msg(format!("Failed to serialize value: {e}")))?;
         self.send(json_value).await
     }
 
@@ -172,8 +171,7 @@ where
             Some(json_value) => match serde_json::from_value(json_value) {
                 Ok(value) => Some(Ok(value)),
                 Err(e) => Some(Err(Error::runtime_msg(format!(
-                    "Failed to deserialize subscription data: {}",
-                    e
+                    "Failed to deserialize subscription data: {e}"
                 )))),
             },
             None => None,

@@ -37,23 +37,28 @@ tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 ```
 
-### Trait-based 服务定义（推荐）
+### RPC 服务定义（推荐）
 
 **服务定义:**
 
 ```rust
-use hsipc::{service_trait, service_impl, ProcessHub, Result};
+use hsipc::{rpc, method, ProcessHub, Result};
 
-#[service_trait]
-trait Calculator {
+// 定义 RPC 服务接口
+#[rpc(server, client, namespace = "calculator")]
+pub trait Calculator {
+    #[method(name = "add")]
     async fn add(&self, params: (i32, i32)) -> Result<i32>;
+    
+    #[method(name = "multiply")]
     async fn multiply(&self, params: (i32, i32)) -> Result<i32>;
 }
 
-struct BasicCalculator;
+// 服务实现
+struct CalculatorImpl;
 
-#[service_impl]
-impl Calculator for BasicCalculator {
+#[hsipc::async_trait]
+impl Calculator for CalculatorImpl {
     async fn add(&self, params: (i32, i32)) -> Result<i32> {
         Ok(params.0 + params.1)
     }
@@ -67,11 +72,11 @@ impl Calculator for BasicCalculator {
 async fn main() -> Result<()> {
     let hub = ProcessHub::new("calculator").await?;
     
-    // 注册服务
-    let calculator = BasicCalculator;
-    hub.register_service(BasicCalculatorService::new(calculator)).await?;
+    // 注册服务 - 自动生成 CalculatorService
+    let calculator = CalculatorImpl;
+    hub.register_service(CalculatorService::new(calculator)).await?;
     
-    // 自动生成的客户端
+    // 自动生成的类型安全客户端
     let client = CalculatorClient::new(hub.clone());
     let result = client.add((10, 20)).await?;
     println!("10 + 20 = {}", result);
@@ -142,8 +147,11 @@ fn main() -> hsipc::Result<()> {
 ## 运行示例
 
 ```bash
-# Trait-based 服务示例
-cargo run --example trait_based_service
+# RPC 系统完整演示（推荐）
+cargo run --example rpc_system_demo demo
+
+# RPC 服务示例
+cargo run --example trait_based_service demo
 
 # 基础请求/响应示例
 # 终端 1 - 启动服务器
@@ -177,12 +185,13 @@ hsipc 采用分层架构:
 - ✅ 基础项目结构和依赖管理
 - ✅ 核心 trait 和数据结构
 - ✅ ProcessHub 抽象层
-- ✅ **Trait-based 服务架构** (2025-07-08 完成)
-  - 完整的过程宏系统 (`service_trait`, `service_impl`)
-  - 自动生成的类型化客户端
-  - 多态性支持 (同一接口多种实现)
-  - 组合模式支持 (装饰器、缓存等)
-  - 全面的测试覆盖
+- ✅ **RPC 系统 v2** (2025-07-09 完成)
+  - jsonrpsee 风格的 `#[rpc(server, client, namespace = "name")]` 宏
+  - 自动生成类型安全的服务和客户端
+  - 支持异步/同步方法、多参数、订阅
+  - 完整的订阅协议基础架构
+  - 端到端 RPC 调用和错误处理
+  - 13 个测试全部通过，30 秒验证周期
 - ✅ 发布/订阅系统
 - ✅ 完整的示例代码和文档
 - ✅ **性能优化和基准测试** (2025-07-09 完成)
@@ -214,30 +223,33 @@ hsipc 采用分层架构:
 
 ## 技术亮点
 
-### Trait-based 服务架构
-- **类型安全**: 编译时检查，明确的接口定义
-- **多态性**: 同一接口的多种实现方式
-- **组合模式**: 支持装饰器、缓存等复杂模式
-- **自动生成**: 完全类型化的客户端，优秀的 IDE 支持
-- **测试友好**: 易于创建 mock 实现进行单元测试
+### RPC 系统 v2
+- **类型安全**: jsonrpsee 风格的编译时检查
+- **自动生成**: 完全类型化的服务和客户端代码
+- **异步优先**: 默认异步，支持同步标记
+- **订阅支持**: 内置 `PendingSubscriptionSink` 订阅机制
+- **多参数支持**: 灵活的参数和返回类型
+- **错误处理**: 统一的错误传播机制
 
-### 服务定义对比
+### RPC 系统特性
 
-| 特性 | Trait-based (推荐) | 传统 #[service] |
-|------|-------------------|----------------|
-| 类型安全 | 编译时检查 | 运行时检查 |
-| 多态性 | ✅ 支持 | ❌ 不支持 |
-| IDE 支持 | ✅ 完整 | ⚠️ 部分 |
-| 测试性 | ✅ 优秀 | ⚠️ 一般 |
-| 学习成本 | ⚠️ 中等 | ✅ 低 |
+| 特性 | RPC v2 (当前) | 描述 |
+|------|---------------|------|
+| 类型安全 | ✅ 编译时检查 | trait 定义确保类型一致性 |
+| 自动生成 | ✅ 服务+客户端 | 自动生成 `ServiceName{Service,Client}` |
+| 异步支持 | ✅ 默认异步 | 支持 `sync` 标记的同步方法 |
+| 订阅机制 | ✅ 内置支持 | 自动插入 `PendingSubscriptionSink` |
+| IDE 支持 | ✅ 完整 | 完整的代码补全和类型提示 |
+| 测试友好 | ✅ 优秀 | 易于测试的 trait 基础架构 |
 
 ## 下一步
 
-1. 优化多进程通信稳定性
-2. ✅ ~~性能优化和基准测试~~ (已完成)
-3. 添加更多服务组合模式示例
-4. 生产环境特性 (监控、日志等)
-5. 完善错误处理和重试机制
+1. 完善订阅系统数据流传输
+2. 优化多进程通信稳定性
+3. ✅ ~~RPC 系统 v2~~ (已完成)
+4. ✅ ~~性能优化和基准测试~~ (已完成)
+5. 生产环境特性 (监控、日志等)
+6. 完善错误处理和重试机制
 
 ## 许可证
 

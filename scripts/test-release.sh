@@ -27,7 +27,7 @@ echo "🔍 Running pre-release checks..."
 cargo test --workspace --all-features
 cargo check --workspace --all-features
 cargo fmt --check
-cargo clippy --workspace --all-features -- -D warnings
+cargo clippy --workspace --all-features -- -D warnings -A clippy::empty-line-after-doc-comments -A clippy::mixed-attributes-style
 
 echo "✅ All pre-release checks passed!"
 

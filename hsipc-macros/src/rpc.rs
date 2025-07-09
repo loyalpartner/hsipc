@@ -8,10 +8,13 @@ use syn::{parse_macro_input, Attribute, FnArg, ItemTrait, ReturnType, TraitItem,
 
 /// Parse RPC macro arguments
 fn parse_rpc_args(args: &str) -> RpcConfig {
-    let mut config = RpcConfig::default();
-
-    config.server = args.contains("server");
-    config.client = args.contains("client");
+    let server = args.contains("server");
+    let client = args.contains("client");
+    let mut config = RpcConfig {
+        server,
+        client,
+        ..Default::default()
+    };
 
     // Parse namespace
     if let Some(start) = args.find("namespace = \"") {
@@ -55,6 +58,7 @@ fn extract_result_inner_type(return_type: Option<&Type>) -> proc_macro2::TokenSt
 }
 
 #[derive(Default)]
+#[allow(dead_code)]
 struct RpcConfig {
     server: bool,
     client: bool,

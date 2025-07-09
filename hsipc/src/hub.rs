@@ -548,7 +548,7 @@ impl Runtime {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .map_err(|e| Error::runtime_msg(format!("Failed to create runtime: {}", e)))?;
+            .map_err(|e| Error::runtime_msg(format!("Failed to create runtime: {e}")))?;
 
         Ok(Self { rt })
     }

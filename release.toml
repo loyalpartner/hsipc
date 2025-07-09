@@ -19,6 +19,6 @@ tag = true
 
 # Pre-release hooks
 pre-release-hook = [
-    "cargo test --all-features",
-    "cargo check --all-features"
+    "cargo test --workspace --all-features",
+    "cargo check --workspace --all-features"
 ]

@@ -21,6 +21,7 @@ pub trait Calculator {
 
 // Custom error type for calculator operations
 #[derive(Debug)]
+#[allow(dead_code)]
 enum CalcError {
     NegativeFactorial,
     Overflow,

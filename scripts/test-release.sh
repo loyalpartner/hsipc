@@ -43,10 +43,14 @@ cd hsipc-macros
 cargo publish --dry-run
 cd ..
 
-# For hsipc, we need to test with --allow-dirty since hsipc-macros doesn't exist on crates.io yet
-echo "📦 Testing hsipc package publishing (dry run with --allow-dirty)..."
+# For hsipc, we need to temporarily remove the version constraint for testing
+echo "📦 Testing hsipc package publishing (dry run)..."
 cd hsipc
+# Temporarily remove version constraint for testing
+sed -i 's/version = "0.1.0", //' Cargo.toml
 cargo publish --dry-run --allow-dirty
+# Restore version constraint
+sed -i 's/hsipc-macros = { path = "..\/hsipc-macros", optional = true }/hsipc-macros = { path = "..\/hsipc-macros", version = "0.1.0", optional = true }/' Cargo.toml
 cd ..
 
 echo "✅ Packages can be published!"

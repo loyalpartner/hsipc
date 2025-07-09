@@ -21,11 +21,7 @@ pub struct PendingSubscriptionSink {
 
 impl PendingSubscriptionSink {
     /// Create a new pending subscription sink
-    pub fn new(
-        id: Uuid,
-        method: String,
-        sender: mpsc::UnboundedSender<serde_json::Value>,
-    ) -> Self {
+    pub fn new(id: Uuid, method: String, sender: mpsc::UnboundedSender<serde_json::Value>) -> Self {
         Self {
             id,
             method,
@@ -44,7 +40,11 @@ impl PendingSubscriptionSink {
             .ok_or_else(|| Error::runtime_msg("Subscription already accepted or rejected"))?;
 
         // TODO: Send accept message to client through ProcessHub
-        log::trace!("Subscription {} accepted for method {}", self.id, self.method);
+        log::trace!(
+            "Subscription {} accepted for method {}",
+            self.id,
+            self.method
+        );
 
         Ok(SubscriptionSink::new(self.id, sender, self.method))
     }
@@ -55,12 +55,20 @@ impl PendingSubscriptionSink {
     /// the PendingSubscriptionSink.
     pub async fn reject(self, reason: String) -> Result<()> {
         // TODO: Send reject message to client through ProcessHub
-        log::trace!("Subscription {} rejected for method {}: {}", self.id, self.method, reason);
-        
+        log::trace!(
+            "Subscription {} rejected for method {}: {}",
+            self.id,
+            self.method,
+            reason
+        );
+
         // Drop the sender to close the channel
         drop(self.sender);
-        
-        Err(Error::runtime_msg(format!("Subscription rejected: {}", reason)))
+
+        Err(Error::runtime_msg(format!(
+            "Subscription rejected: {}",
+            reason
+        )))
     }
 
     /// Get the subscription ID
@@ -161,14 +169,13 @@ where
     /// Returns Some(Err(_)) if there was an error deserializing the data.
     pub async fn next(&mut self) -> Option<Result<T>> {
         match self.receiver.recv().await {
-            Some(json_value) => {
-                match serde_json::from_value(json_value) {
-                    Ok(value) => Some(Ok(value)),
-                    Err(e) => Some(Err(Error::runtime_msg(format!(
-                        "Failed to deserialize subscription data: {}", e
-                    )))),
-                }
-            }
+            Some(json_value) => match serde_json::from_value(json_value) {
+                Ok(value) => Some(Ok(value)),
+                Err(e) => Some(Err(Error::runtime_msg(format!(
+                    "Failed to deserialize subscription data: {}",
+                    e
+                )))),
+            },
             None => None,
         }
     }
@@ -180,7 +187,7 @@ where
     pub async fn cancel(self) -> Result<()> {
         // TODO: Send cancel message to server through ProcessHub
         log::trace!("Subscription {} canceled", self.id);
-        
+
         // Closing the receiver will signal the server that we're done
         drop(self.receiver);
         Ok(())
@@ -202,23 +209,13 @@ pub enum SubscriptionMessage {
         params: serde_json::Value,
     },
     /// Subscription was accepted by the server
-    Accept {
-        id: Uuid,
-    },
+    Accept { id: Uuid },
     /// Subscription was rejected by the server
-    Reject {
-        id: Uuid,
-        reason: String,
-    },
+    Reject { id: Uuid, reason: String },
     /// Data sent from server to client
-    Data {
-        id: Uuid,
-        data: serde_json::Value,
-    },
+    Data { id: Uuid, data: serde_json::Value },
     /// Subscription was canceled
-    Cancel {
-        id: Uuid,
-    },
+    Cancel { id: Uuid },
 }
 
 impl SubscriptionMessage {
@@ -242,11 +239,7 @@ mod tests {
     #[tokio::test]
     async fn test_pending_subscription_accept() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let pending = PendingSubscriptionSink::new(
-            Uuid::new_v4(),
-            "test_method".to_string(),
-            tx,
-        );
+        let pending = PendingSubscriptionSink::new(Uuid::new_v4(), "test_method".to_string(), tx);
 
         let sink = pending.accept().await.unwrap();
         assert_eq!(sink.method(), "test_method");
@@ -260,11 +253,7 @@ mod tests {
     #[tokio::test]
     async fn test_pending_subscription_reject() {
         let (tx, _rx) = mpsc::unbounded_channel();
-        let pending = PendingSubscriptionSink::new(
-            Uuid::new_v4(),
-            "test_method".to_string(),
-            tx,
-        );
+        let pending = PendingSubscriptionSink::new(Uuid::new_v4(), "test_method".to_string(), tx);
 
         let result = pending.reject("Invalid parameters".to_string()).await;
         assert!(result.is_err());
@@ -273,14 +262,11 @@ mod tests {
     #[tokio::test]
     async fn test_rpc_subscription() {
         let (tx, rx) = mpsc::unbounded_channel();
-        let mut subscription: RpcSubscription<String> = RpcSubscription::new(
-            Uuid::new_v4(),
-            rx,
-        );
+        let mut subscription: RpcSubscription<String> = RpcSubscription::new(Uuid::new_v4(), rx);
 
         // Send data through the channel
         tx.send(json!("test_message")).unwrap();
-        
+
         // Receive and verify
         let received = subscription.next().await.unwrap().unwrap();
         assert_eq!(received, "test_message");
@@ -289,10 +275,7 @@ mod tests {
     #[tokio::test]
     async fn test_subscription_closed() {
         let (tx, rx) = mpsc::unbounded_channel();
-        let mut subscription: RpcSubscription<String> = RpcSubscription::new(
-            Uuid::new_v4(),
-            rx,
-        );
+        let mut subscription: RpcSubscription<String> = RpcSubscription::new(Uuid::new_v4(), rx);
 
         // Drop sender to close the channel
         drop(tx);

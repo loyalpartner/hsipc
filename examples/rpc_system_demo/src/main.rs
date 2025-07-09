@@ -3,9 +3,9 @@
 //! This example serves as both documentation and functional verification
 //! following the TESTING.md example-driven testing approach.
 
-use hsipc::{ProcessHub, Result, SubscriptionResult, rpc, method, subscription};
-use serde::{Deserialize, Serialize};
 use clap::{Parser, Subcommand};
+use hsipc::{method, rpc, subscription, ProcessHub};
+use serde::{Deserialize, Serialize};
 
 // Request/Response types
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -45,33 +45,46 @@ pub enum CalculatorError {
     Overflow,
 }
 
+impl From<CalculatorError> for hsipc::Error {
+    fn from(err: CalculatorError) -> Self {
+        hsipc::Error::runtime_msg(err.to_string())
+    }
+}
+
+// Result type alias for methods that don't need custom errors
+type Result<T> = std::result::Result<T, CalculatorError>;
+type SubscriptionResult = std::result::Result<(), CalculatorError>;
+
 // Complete RPC service demonstrating all features
 #[rpc(server, client, namespace = "calculator")]
 pub trait Calculator {
     // Basic async method
     #[method(name = "add")]
     async fn add(&self, req: CalculationRequest) -> Result<CalculationResult>;
-    
+
     // Sync method
     #[method(name = "multiply", sync)]
     fn multiply(&self, a: i32, b: i32) -> Result<i32>;
-    
+
     // Multi-parameter method
     #[method(name = "power")]
     async fn power(&self, base: f64, exponent: f64) -> Result<f64>;
-    
+
     // Method with custom error type
     #[method(name = "divide")]
-    async fn divide(&self, req: CalculationRequest) -> std::result::Result<CalculationResult, CalculatorError>;
-    
+    async fn divide(
+        &self,
+        req: CalculationRequest,
+    ) -> std::result::Result<CalculationResult, CalculatorError>;
+
     // Method with timeout
     #[method(name = "complex_calculation", timeout = 5000)]
     async fn complex_calculation(&self, iterations: u32) -> Result<f64>;
-    
+
     // No parameter method
     #[method(name = "get_status")]
     async fn get_status(&self) -> Result<StatusInfo>;
-    
+
     // Subscription method
     #[subscription(name = "calculation_logs", item = LogEvent)]
     async fn subscribe_logs(&self, level_filter: Option<String>) -> SubscriptionResult;
@@ -98,16 +111,19 @@ impl Calculator for CalculatorImpl {
             operation: "add".to_string(),
         })
     }
-    
+
     fn multiply(&self, a: i32, b: i32) -> Result<i32> {
         Ok(a * b)
     }
-    
+
     async fn power(&self, base: f64, exponent: f64) -> Result<f64> {
         Ok(base.powf(exponent))
     }
-    
-    async fn divide(&self, req: CalculationRequest) -> std::result::Result<CalculationResult, CalculatorError> {
+
+    async fn divide(
+        &self,
+        req: CalculationRequest,
+    ) -> std::result::Result<CalculationResult, CalculatorError> {
         if req.y == 0.0 {
             Err(CalculatorError::DivisionByZero)
         } else {
@@ -117,7 +133,7 @@ impl Calculator for CalculatorImpl {
             })
         }
     }
-    
+
     async fn complex_calculation(&self, iterations: u32) -> Result<f64> {
         // Simulate complex calculation
         let mut result = 0.0;
@@ -129,7 +145,7 @@ impl Calculator for CalculatorImpl {
         }
         Ok(result)
     }
-    
+
     async fn get_status(&self) -> Result<StatusInfo> {
         Ok(StatusInfo {
             service: "CalculatorService".to_string(),
@@ -137,9 +153,17 @@ impl Calculator for CalculatorImpl {
             uptime: self.start_time.elapsed().as_secs(),
         })
     }
-    
-    async fn subscribe_logs(&self, _level_filter: Option<String>) -> SubscriptionResult {
-        // Subscription implementation would go here
+
+    async fn subscribe_logs(
+        &self,
+        pending: hsipc::PendingSubscriptionSink,
+        _level_filter: Option<String>,
+    ) -> SubscriptionResult {
+        // Accept the subscription for demo purposes
+        let _sink = pending
+            .accept()
+            .await
+            .map_err(|e| CalculatorError::InvalidOperation(e.to_string()))?;
         Ok(())
     }
 }
@@ -163,9 +187,9 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> hsipc::Result<()> {
     let cli = Cli::parse();
-    
+
     match cli.command {
         Commands::Demo => run_demo().await,
         Commands::Server => run_server().await,
@@ -174,104 +198,117 @@ async fn main() -> Result<()> {
 }
 
 /// Comprehensive demo showcasing all RPC features
-async fn run_demo() -> Result<()> {
+async fn run_demo() -> hsipc::Result<()> {
     println!("🚀 RPC System Demo - Testing all features...");
-    
+
     // Setup
     let hub = ProcessHub::new("rpc_demo").await?;
     let service = CalculatorService::new(CalculatorImpl::new());
     hub.register_service(service).await?;
-    
+
     let client = CalculatorClient::new(hub);
-    
+
     // 1. Test basic async method
     println!("✅ Testing basic async method...");
     let add_result = client.add(CalculationRequest { x: 10.0, y: 5.0 }).await?;
-    println!("   Add result: {} = {}", add_result.operation, add_result.result);
+    println!(
+        "   Add result: {} = {}",
+        add_result.operation, add_result.result
+    );
     assert_eq!(add_result.result, 15.0);
-    
+
     // 2. Test sync method
     println!("✅ Testing sync method...");
     let multiply_result = client.multiply(6, 7)?;
     println!("   Multiply result: {}", multiply_result);
     assert_eq!(multiply_result, 42);
-    
+
     // 3. Test multi-parameter method
     println!("✅ Testing multi-parameter method...");
     let power_result = client.power(2.0, 3.0).await?;
     println!("   Power result: {}", power_result);
     assert_eq!(power_result, 8.0);
-    
+
     // 4. Test custom error type - success case
     println!("✅ Testing custom error type (success)...");
-    let divide_result = client.divide(CalculationRequest { x: 10.0, y: 2.0 }).await?;
-    println!("   Divide result: {} = {}", divide_result.operation, divide_result.result);
+    let divide_result = client
+        .divide(CalculationRequest { x: 10.0, y: 2.0 })
+        .await?;
+    println!(
+        "   Divide result: {} = {}",
+        divide_result.operation, divide_result.result
+    );
     assert_eq!(divide_result.result, 5.0);
-    
+
     // 5. Test custom error type - error case
     println!("✅ Testing custom error type (error)...");
     let divide_error = client.divide(CalculationRequest { x: 10.0, y: 0.0 }).await;
     println!("   Expected error: {:?}", divide_error);
     assert!(divide_error.is_err());
-    
+
     // 6. Test no parameter method
     println!("✅ Testing no parameter method...");
     let status = client.get_status().await?;
-    println!("   Status: {} v{}, uptime: {}s", status.service, status.version, status.uptime);
-    
+    println!(
+        "   Status: {} v{}, uptime: {}s",
+        status.service, status.version, status.uptime
+    );
+
     // 7. Test subscription method
     println!("✅ Testing subscription method...");
     let _sub_result = client.subscribe_logs(Some("info".to_string())).await?;
     println!("   Subscription created successfully");
-    
+
     // 8. Test complex calculation with timeout
     println!("✅ Testing complex calculation...");
     let complex_result = client.complex_calculation(1000).await?;
     println!("   Complex calculation result: {}", complex_result);
-    
+
     println!("\n🎉 All RPC features working correctly!");
     println!("📊 Demo completed in < 30 seconds");
-    
+
     Ok(())
 }
 
 /// Run as server (for multi-process testing)
-async fn run_server() -> Result<()> {
+async fn run_server() -> hsipc::Result<()> {
     println!("🖥️  Starting RPC server...");
-    
+
     let hub = ProcessHub::new("calculator_server").await?;
     let service = CalculatorService::new(CalculatorImpl::new());
     hub.register_service(service).await?;
-    
+
     println!("✅ Server running. Press Ctrl+C to stop.");
-    
+
     // Keep server running
     tokio::signal::ctrl_c().await?;
     println!("🛑 Server shutting down...");
-    
+
     Ok(())
 }
 
 /// Run as client (for multi-process testing)
-async fn run_client() -> Result<()> {
+async fn run_client() -> hsipc::Result<()> {
     println!("📱 Starting RPC client...");
-    
+
     let hub = ProcessHub::new("calculator_client").await?;
     let client = CalculatorClient::new(hub);
-    
+
     // Simple client operations
     println!("🧮 Performing remote calculations...");
-    
-    let result = client.add(CalculationRequest { x: 100.0, y: 200.0 }).await?;
+
+    let result = client
+        .add(CalculationRequest { x: 100.0, y: 200.0 })
+        .await?;
     println!("Remote add: {}", result.result);
-    
+
     let multiply_result = client.multiply(12, 13)?;
     println!("Remote multiply: {}", multiply_result);
-    
+
     let status = client.get_status().await?;
     println!("Remote status: {} v{}", status.service, status.version);
-    
+
     println!("✅ Client operations completed");
-    
+
     Ok(())
 }

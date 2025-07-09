@@ -1,17 +1,21 @@
-//! Trait-based service example demonstrating the enhanced approach
+//! Trait-based service example demonstrating the new RPC approach
 //!
-//! This example shows how to use #[service_trait] and #[service_impl] together
-//! for a more type-safe and polymorphic service design.
+//! This example shows how to use #[rpc] macro for type-safe service design.
 
-use hsipc::{service_impl, service_trait, ProcessHub, Result, Service};
+use hsipc::{method, rpc, ProcessHub, Result, Service};
 use std::fmt;
 use tracing::info;
 
 // Define the service interface with typed client generation
-#[service_trait]
-trait Calculator {
+#[rpc(server, client, namespace = "calculator")]
+pub trait Calculator {
+    #[method(name = "add")]
     async fn add(&self, params: (i32, i32)) -> Result<i32>;
+
+    #[method(name = "multiply")]
     async fn multiply(&self, params: (i32, i32)) -> Result<i32>;
+
+    #[method(name = "factorial")]
     async fn factorial(&self, n: i32) -> Result<i64>;
 }
 
@@ -48,7 +52,7 @@ impl From<CalcError> for hsipc::Error {
 // Basic implementation
 struct BasicCalculator;
 
-#[service_impl]
+#[hsipc::async_trait]
 impl Calculator for BasicCalculator {
     async fn add(&self, params: (i32, i32)) -> Result<i32> {
         info!("BasicCalculator: Computing {} + {}", params.0, params.1);
@@ -110,7 +114,7 @@ async fn run_server() -> Result<()> {
     info!("Server hub created");
 
     // Register calculator service
-    let service = BasicCalculatorService::new(BasicCalculator);
+    let service = CalculatorService::new(BasicCalculator);
     info!(
         "Service created: name={}, methods={:?}",
         service.name(),
@@ -137,7 +141,8 @@ async fn run_client() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
     // Create client hub
-    let client = CalculatorClient::new("calculator_client").await?;
+    let hub = ProcessHub::new("calculator_client").await?;
+    let client = CalculatorClient::new(hub);
     info!("Client connected");
 
     // Wait for service discovery

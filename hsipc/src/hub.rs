@@ -9,13 +9,68 @@ use uuid::Uuid;
 use crate::{
     event::{Event, Subscriber, Subscription, SubscriptionRegistry},
     message::{MessageType, ServiceDirectory, ServiceInfo},
-    service::{Service, ServiceRegistry},
     transport::Transport,
     Error, Message, Result,
 };
 
 #[cfg(test)]
 use crate::transport::IpmbTransport;
+
+// Simple Service trait for RPC system
+#[async_trait::async_trait]
+pub trait Service: Send + Sync + 'static {
+    fn name(&self) -> &'static str;
+    fn methods(&self) -> Vec<&'static str>;
+    async fn handle(&self, method: &str, payload: Vec<u8>) -> Result<Vec<u8>>;
+}
+
+// Service registry for managing RPC services
+pub struct ServiceRegistry {
+    services: Arc<RwLock<std::collections::HashMap<String, Arc<dyn Service>>>>,
+}
+
+impl ServiceRegistry {
+    pub fn new() -> Self {
+        Self {
+            services: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        }
+    }
+
+    pub async fn register(&self, service: Arc<dyn Service>) -> Result<()> {
+        let mut services = self.services.write().await;
+        services.insert(service.name().to_string(), service);
+        Ok(())
+    }
+
+    pub async fn call(&self, service_method: &str, payload: Vec<u8>) -> Result<Vec<u8>> {
+        // Parse service.method format
+        let parts: Vec<&str> = service_method.split('.').collect();
+        if parts.len() != 2 {
+            return Err(Error::invalid_request(
+                "Invalid service.method format",
+                None,
+            ));
+        }
+
+        let (service_name, method) = (parts[0], parts[1]);
+        let services = self.services.read().await;
+        if let Some(service) = services.get(service_name) {
+            service.handle(method, payload).await
+        } else {
+            Err(Error::service_not_found(service_name))
+        }
+    }
+
+    pub async fn list_services(&self) -> Vec<String> {
+        let services = self.services.read().await;
+        services.keys().cloned().collect()
+    }
+
+    pub async fn get_service(&self, service_name: &str) -> Option<std::sync::Arc<dyn Service>> {
+        let services = self.services.read().await;
+        services.get(service_name).cloned()
+    }
+}
 
 #[cfg(not(test))]
 use crate::transport_ipmb::IpmbTransport;
@@ -209,6 +264,47 @@ impl ProcessHub {
                     }
                 }
             }
+            MessageType::SubscriptionRequest => {
+                // Handle subscription request
+                if let Some(ref topic) = msg.topic {
+                    // Extract method name from topic (format: "subscription.{method}")
+                    if let Some(method) = topic.strip_prefix("subscription.") {
+                        // TODO: Create PendingSubscriptionSink and call subscription method
+                        tracing::info!("📞 Received subscription request for method: {}", method);
+
+                        // For now, just send a reject response
+                        if let Some(correlation_id) = msg.correlation_id {
+                            let reject_msg = Message::subscription_reject(
+                                hub_name.to_string(),
+                                msg.source.clone(),
+                                correlation_id,
+                                "Subscription not implemented yet".to_string(),
+                            );
+                            let _ = transport.send(reject_msg).await;
+                        }
+                    }
+                }
+            }
+            MessageType::SubscriptionAccept => {
+                // Handle subscription accept from server
+                tracing::info!("✅ Subscription accepted from {}", msg.source);
+                // TODO: Set up subscription receiver
+            }
+            MessageType::SubscriptionReject => {
+                // Handle subscription reject from server
+                tracing::info!("❌ Subscription rejected from {}", msg.source);
+                // TODO: Handle subscription rejection
+            }
+            MessageType::SubscriptionData => {
+                // Handle subscription data from server
+                tracing::info!("📊 Received subscription data from {}", msg.source);
+                // TODO: Forward data to subscription receiver
+            }
+            MessageType::SubscriptionCancel => {
+                // Handle subscription cancel from client
+                tracing::info!("🚫 Subscription cancelled from {}", msg.source);
+                // TODO: Clean up subscription
+            }
             _ => {}
         }
 
@@ -221,7 +317,9 @@ impl ProcessHub {
         let methods: Vec<String> = service.methods().iter().map(|&s| s.to_string()).collect();
 
         // Register locally first
-        self.service_registry.register(service).await?;
+        self.service_registry
+            .register(std::sync::Arc::new(service))
+            .await?;
 
         // Broadcast service registration to other processes
         let service_info = ServiceInfo {

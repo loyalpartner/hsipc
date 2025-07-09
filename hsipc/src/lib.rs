@@ -1,25 +1,21 @@
 //! # hsipc - High-performance inter-process communication framework
 //!
 //! A declarative IPC framework built on top of ipmb, providing type-safe
-//! request/response and publish/subscribe patterns.
+//! RPC and publish/subscribe patterns.
 //!
 //! ## Quick Start
 //!
-//! ### Request/Response Pattern
+//! ### RPC Pattern
 //!
-//! Define services using the `#[service]` macro:
+//! Define services using the `#[rpc]` macro:
 //!
 //! ```rust,ignore
-//! use hsipc::{service, ProcessHub, Result};
+//! use hsipc::{rpc, method, ProcessHub, Result};
 //!
-//! #[derive(Debug)]
-//! pub struct Calculator;
-//!
-//! #[service]
-//! impl Calculator {
-//!     async fn add(&self, params: (i32, i32)) -> Result<i32> {
-//!         Ok(params.0 + params.1)
-//!     }
+//! #[rpc(server, client, namespace = "calculator")]
+//! pub trait Calculator {
+//!     #[method(name = "add")]
+//!     async fn add(&self, a: i32, b: i32) -> Result<i32>;
 //! }
 //!
 //! #[tokio::main]
@@ -27,11 +23,12 @@
 //!     let hub = ProcessHub::new("demo").await?;
 //!     
 //!     // Register service
-//!     let service = CalculatorService::new(Calculator);
+//!     let service = CalculatorService::new(CalculatorImpl);
 //!     hub.register_service(service).await?;
 //!     
-//!     // Use direct calls
-//!     let result: i32 = hub.call("Calculator.add", (10, 5)).await?;
+//!     // Use typed client
+//!     let client = CalculatorClient::new(hub);
+//!     let result = client.add(10, 5).await?;
 //!     assert_eq!(result, 15);
 //!     
 //!     Ok(())
@@ -93,7 +90,6 @@ pub mod error;
 pub mod event;
 pub mod hub;
 pub mod message;
-pub mod service;
 pub mod subscription;
 pub mod transport;
 pub mod transport_ipmb;
@@ -108,16 +104,16 @@ mod error_tests;
 pub use error::{Error, Result};
 pub use event::{Event, Subscriber, Subscription};
 pub use hub::{ProcessHub, SyncProcessHub};
+pub use hub::{Service, ServiceRegistry};
 pub use message::{Message, Request, Response};
-pub use service::{Service, ServiceRegistry};
-pub use subscription::{PendingSubscriptionSink, SubscriptionSink, RpcSubscription};
+pub use subscription::{PendingSubscriptionSink, RpcSubscription, SubscriptionSink};
 
 // Type alias for subscription results
 pub type SubscriptionResult = Result<()>;
 
 // Re-export macros when feature is enabled
 #[cfg(feature = "macros")]
-pub use hsipc_macros::{rpc, method, subscription, service, service_impl, service_trait, subscribe, Event};
+pub use hsipc_macros::{method, rpc, subscribe, subscription, Event};
 
 // Macro usage documentation
 #[cfg(feature = "macros")]
@@ -168,7 +164,7 @@ pub mod macros {
     ///     Ok(())
     /// }
     /// ```
-    pub use crate::service;
+    // Service functionality moved to hub module
 
     /// # Event Derive Macro (`#[derive(Event)]`)
     ///
@@ -274,7 +270,7 @@ pub mod macros {
     /// - **Current limitation**: May have some implementation gaps
     ///
     /// **Note**: This approach is theoretically superior but currently less polished than `#[service]`.
-    pub use crate::service_impl;
+    // service_impl functionality moved to RPC macros
 
     /// # Service Trait Definition Macro (`#[service_trait]`)
     ///
@@ -332,7 +328,9 @@ pub mod macros {
     /// - **Excellent IDE support**: Full autocomplete and type checking
     ///
     /// **Status**: Newly enhanced - this is the recommended trait-based approach.
-    pub use crate::service_trait;
+    pub mod service_trait {
+        //! service_trait functionality moved to RPC macros
+    }
 }
 
 // Re-export commonly used dependencies

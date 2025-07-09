@@ -1,16 +1,30 @@
-//! Request/Response pattern example using macros
+//! Request/Response pattern example using new RPC macros
 
-use hsipc::{ProcessHub, Result, Service};
-use hsipc_macros::service;
+use hsipc::{method, rpc, ProcessHub, Result, Service};
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 
-// Calculator service using service macro
-#[derive(Debug)]
-pub struct Calculator;
+// Calculator service using new RPC macro
+#[rpc(server, client, namespace = "calculator")]
+pub trait Calculator {
+    #[method(name = "add")]
+    async fn add(&self, params: (i32, i32)) -> Result<i32>;
 
-#[service]
-impl Calculator {
+    #[method(name = "subtract")]
+    async fn subtract(&self, params: (i32, i32)) -> Result<i32>;
+
+    #[method(name = "multiply")]
+    async fn multiply(&self, params: (i32, i32)) -> Result<i32>;
+
+    #[method(name = "divide")]
+    async fn divide(&self, params: (i32, i32)) -> Result<f64>;
+}
+
+#[derive(Debug)]
+pub struct CalculatorImpl;
+
+#[hsipc::async_trait]
+impl Calculator for CalculatorImpl {
     async fn add(&self, params: (i32, i32)) -> Result<i32> {
         let (a, b) = params;
         let result = a + b;
@@ -57,12 +71,24 @@ pub struct CreateUserRequest {
     pub email: String,
 }
 
-// User service using service macro
-#[derive(Debug)]
-pub struct UserService;
+// User service using new RPC macro
+#[rpc(server, client, namespace = "user")]
+pub trait UserService {
+    #[method(name = "create_user")]
+    async fn create_user(&self, req: CreateUserRequest) -> Result<User>;
 
-#[service]
-impl UserService {
+    #[method(name = "get_user")]
+    async fn get_user(&self, id: u32) -> Result<Option<User>>;
+
+    #[method(name = "delete_user")]
+    async fn delete_user(&self, id: u32) -> Result<bool>;
+}
+
+#[derive(Debug)]
+pub struct UserServiceImpl;
+
+#[hsipc::async_trait]
+impl UserService for UserServiceImpl {
     async fn create_user(&self, req: CreateUserRequest) -> Result<User> {
         let user = User {
             id: rand::random(),
@@ -103,8 +129,8 @@ async fn run_services(hub: ProcessHub) -> Result<()> {
     println!("🚀 Starting services...");
 
     // Register services using macro-generated wrappers
-    let calculator_service = CalculatorService::new(Calculator);
-    let user_service_wrapper = UserServiceService::new(UserService);
+    let calculator_service = CalculatorService::new(CalculatorImpl);
+    let user_service_wrapper = UserServiceService::new(UserServiceImpl);
 
     println!(
         "📝 Calculator service methods: {:?}",
@@ -137,40 +163,38 @@ async fn run_client(hub: ProcessHub) -> Result<()> {
 
     println!("🎯 Testing Calculator service with direct hub calls...");
 
-    // Test calculator operations using direct hub calls (like the tests)
+    // Test calculator operations using generated clients
+    let calc_client = CalculatorClient::new(hub.clone());
+
     println!("🔍 Testing Calculator.add...");
-    match hub.call::<_, i32>("Calculator.add", (10, 5)).await {
+    match calc_client.add((10, 5)).await {
         Ok(result) => println!("✅ Add result: {result}"),
         Err(e) => println!("❌ Add failed: {e}"),
     }
 
     println!("🔍 Testing Calculator.multiply...");
-    match hub.call::<_, i32>("Calculator.multiply", (6, 7)).await {
+    match calc_client.multiply((6, 7)).await {
         Ok(result) => println!("✅ Multiply result: {result}"),
         Err(e) => println!("❌ Multiply failed: {e}"),
     }
 
-    println!("\n👥 Testing User service with direct hub calls...");
+    println!("\n👥 Testing User service with generated client...");
 
-    // Test user operations using direct hub calls
+    // Test user operations using generated client
+    let user_client = UserServiceClient::new(hub.clone());
+
     let create_req = CreateUserRequest {
         name: "Charlie".to_string(),
         email: "charlie@example.com".to_string(),
     };
     println!("🔍 Testing UserService.create_user...");
-    match hub
-        .call::<_, User>("UserService.create_user", create_req)
-        .await
-    {
+    match user_client.create_user(create_req).await {
         Ok(user) => println!("✅ Created user: {user:?}"),
         Err(e) => println!("❌ Create user failed: {e}"),
     }
 
     println!("🔍 Testing UserService.get_user...");
-    match hub
-        .call::<_, Option<User>>("UserService.get_user", 42u32)
-        .await
-    {
+    match user_client.get_user(42u32).await {
         Ok(user) => println!("✅ Found user: {user:?}"),
         Err(e) => println!("❌ Get user failed: {e}"),
     }

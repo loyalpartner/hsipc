@@ -45,6 +45,12 @@ pub enum MessageType {
     ServiceUnregister,
     ServiceQuery,
     ServiceDirectory,
+    // Subscription protocol messages
+    SubscriptionRequest,
+    SubscriptionAccept,
+    SubscriptionReject,
+    SubscriptionData,
+    SubscriptionCancel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +210,120 @@ impl Message {
             topic: Some("service.directory".to_string()),
             payload,
             correlation_id,
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a subscription request message
+    pub fn subscription_request(
+        source: String,
+        target: Option<String>,
+        method: String,
+        params: Vec<u8>,
+    ) -> Self {
+        let subscription_msg = crate::subscription::SubscriptionMessage::Request {
+            id: Uuid::new_v4(),
+            method: method.clone(),
+            params: serde_json::from_slice(&params).unwrap_or(serde_json::Value::Null),
+        };
+        let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
+
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::SubscriptionRequest,
+            source,
+            target,
+            topic: Some(format!("subscription.{}", method)),
+            payload,
+            correlation_id: Some(subscription_msg.id()),
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a subscription accept message
+    pub fn subscription_accept(source: String, target: String, subscription_id: Uuid) -> Self {
+        let subscription_msg = crate::subscription::SubscriptionMessage::Accept {
+            id: subscription_id,
+        };
+        let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
+
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::SubscriptionAccept,
+            source,
+            target: Some(target),
+            topic: Some("subscription.accept".to_string()),
+            payload,
+            correlation_id: Some(subscription_id),
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a subscription reject message
+    pub fn subscription_reject(
+        source: String,
+        target: String,
+        subscription_id: Uuid,
+        reason: String,
+    ) -> Self {
+        let subscription_msg = crate::subscription::SubscriptionMessage::Reject {
+            id: subscription_id,
+            reason,
+        };
+        let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
+
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::SubscriptionReject,
+            source,
+            target: Some(target),
+            topic: Some("subscription.reject".to_string()),
+            payload,
+            correlation_id: Some(subscription_id),
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a subscription data message
+    pub fn subscription_data(
+        source: String,
+        target: String,
+        subscription_id: Uuid,
+        data: serde_json::Value,
+    ) -> Self {
+        let subscription_msg = crate::subscription::SubscriptionMessage::Data {
+            id: subscription_id,
+            data,
+        };
+        let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
+
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::SubscriptionData,
+            source,
+            target: Some(target),
+            topic: Some("subscription.data".to_string()),
+            payload,
+            correlation_id: Some(subscription_id),
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a subscription cancel message
+    pub fn subscription_cancel(source: String, target: String, subscription_id: Uuid) -> Self {
+        let subscription_msg = crate::subscription::SubscriptionMessage::Cancel {
+            id: subscription_id,
+        };
+        let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
+
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::SubscriptionCancel,
+            source,
+            target: Some(target),
+            topic: Some("subscription.cancel".to_string()),
+            payload,
+            correlation_id: Some(subscription_id),
             metadata: MessageMetadata::default(),
         }
     }

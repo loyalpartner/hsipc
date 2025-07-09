@@ -22,5 +22,5 @@ pre-release-hook = [
     "cargo test --workspace --all-features",
     "cargo check --workspace --all-features",
     "cargo fmt --check",
-    "cargo clippy --workspace --all-features -- -D warnings -A clippy::empty-line-after-doc-comments -A clippy::mixed-attributes-style"
+    "cargo clippy --workspace --all-features -- -D warnings"
 ]

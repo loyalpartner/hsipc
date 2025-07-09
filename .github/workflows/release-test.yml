@@ -41,7 +41,7 @@ jobs:
     - name: Check code quality
       run: |
         cargo fmt --check
-        cargo clippy --all-features -- -D warnings -A clippy::empty-line-after-doc-comments -A clippy::mixed-attributes-style
+        cargo clippy --all-features -- -D warnings
     
     - name: Build release packages
       run: cargo build --release --all-features

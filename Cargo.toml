@@ -23,6 +23,12 @@ categories = ["network-programming", "concurrency", "asynchronous"]
 readme = "README.md"
 rust-version = "1.70"
 
+[workspace.lints.clippy]
+# Allow certain warnings that are not critical for this project
+empty-line-after-doc-comments = "allow"
+mixed-attributes-style = "allow"
+type-complexity = "allow"
+
 [workspace.dependencies]
 tokio = { version = "1.35", features = ["full"] }
 ipmb = "0.8"

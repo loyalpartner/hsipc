@@ -48,7 +48,7 @@ jobs:
       if: matrix.rust == 'stable'
 
     - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings -A clippy::empty-line-after-doc-comments -A clippy::mixed-attributes-style
+      run: cargo clippy --all-targets --all-features -- -D warnings
       if: matrix.rust == 'stable'
 
     - name: Build

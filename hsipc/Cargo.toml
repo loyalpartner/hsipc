@@ -13,6 +13,9 @@ categories.workspace = true
 readme.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 tokio = { workspace = true }
 ipmb = { workspace = true }

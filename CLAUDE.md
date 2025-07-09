@@ -1,14 +1,16 @@
-## Project Ideas
+## 开发规范
 
-- Implement a multi-process communication framework inspired by https://github.com/bytedance/ipmb
-  - Support inter-process communication
-  - Enable topic-based message subscription and publishing
+- 文档放在 docs 目录
+- 查看 @README.md 了解项目概述
+- git 工作流程 @docs/git-instructions.md
+- 测试流程 @docs/TESTING.md
 
 - Readme.md 使用中文
 - 注释使用英文
 - 不允许使用 println 宏，库的日志请使用 log 日志库，日志级别请使用 info 级别, 用 trace 级别
 - 每个阶段结束后执行 cargo fmt 格式化代码， cargo clippy 检查代码质量并修复
 - 错误需要用 thiserror 重构下
+- 我们采用的是 tdd 的开发模式
 
 ## Future Enhancements / 待评估功能
 
@@ -29,36 +31,6 @@
   - **组合模式支持**: 实现了缓存装饰器模式 ✓
   - **接口分离**: 清晰的服务契约定义 ✓
 
-- **实现细节**:
-  ```rust
-  // 已实现的 API
-  #[service_trait]
-  trait Calculator {
-      async fn add(&self, params: (i32, i32)) -> Result<i32>;
-      async fn multiply(&self, params: (i32, i32)) -> Result<i32>;
-  }
-
-  struct BasicCalculator;
-
-  #[service_impl]
-  impl Calculator for BasicCalculator {
-      async fn add(&self, params: (i32, i32)) -> Result<i32> {
-          Ok(params.0 + params.1)
-      }
-
-      async fn multiply(&self, params: (i32, i32)) -> Result<i32> {
-          Ok(params.0 * params.1)
-      }
-  }
-
-  // 自动生成: CalculatorClient (完全类型化), BasicCalculatorService
-  ```
-
-- **关键改进**:
-  - 服务包装器名称基于实现类型生成（如 `BasicCalculatorService`），避免命名冲突
-  - 完整的类型推断，支持任意参数和返回类型
-  - 客户端方法完全类型化，IDE 支持优秀
-
 - **已知限制**:
   - 多进程通信存在时序问题（单进程模式工作正常）
   - 需要两个宏配合使用（`#[service_trait]` + `#[service_impl]`）
@@ -77,23 +49,6 @@
   - 构建器模式提供更好的开发体验
   - 支持直接使用函数/闭包作为服务方法
   - 更简洁的服务定义语法
-- **示例对比**:
-  ```rust
-  // 当前 service.rs 方式
-  #[service]
-  impl Calculator {
-      async fn add(&self, params: (i32, i32)) -> Result<i32> {
-          Ok(params.0 + params.1)
-      }
-  }
-
-  // service_v2.rs 方式 (更简洁)
-  let calculator = ServiceBuilder::new("Calculator")
-      .method("add", |req: (i32, i32)| async move {
-          Ok(req.0 + req.1)
-      }).await?
-      .build();
-  ```
 - **迁移需求**:
   - 更新宏系统以支持新的服务定义方式
   - 修改 ProcessHub 集成新的 MethodRegistry
@@ -115,9 +70,9 @@
    - trait-based 服务在多进程模式下存在时序问题
    - 需要进一步调试和优化 IPMB 传输层的服务发现机制
 
-## 项目进展总结 (2025-07-08)
+## 近期工作记录
 
-### 🎉 重大成就
+### 🎉 重大成就 (2025-07-08)
 - **Trait-based Service 架构完全实现**: 成为 hsipc 的新推荐服务定义方式
 - **类型安全大幅提升**: 从运行时方法解析改进到编译时类型检查
 - **开发体验显著改善**: 完整的 IDE 支持和类型提示
@@ -133,8 +88,3 @@
 - 基于实现类型的唯一服务包装器命名
 - 支持复杂的组合模式 (装饰器, 缓存等)
 - 全面的测试覆盖 (单元测试, 集成测试, 并发测试)
-
-### 🚀 未来方向
-1. 多进程通信稳定性优化
-2. 性能基准测试和优化
-3. 更多复杂的服务组合模式示例

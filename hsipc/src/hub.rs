@@ -50,6 +50,14 @@ impl ProcessHub {
         // Start message processing
         hub.start_message_loop().await;
 
+        // Proactively query for existing services after startup
+        let hub_clone = hub.clone();
+        tokio::spawn(async move {
+            // Wait a bit for the message loop to start
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let _ = hub_clone.query_services().await;
+        });
+
         Ok(hub)
     }
 
@@ -228,6 +236,8 @@ impl ProcessHub {
 
         let registration_msg = Message::service_register(self.name.clone(), service_info.clone());
         let _ = self.transport.send(registration_msg).await;
+        // Give a small delay to ensure the broadcast message is sent
+        tokio::time::sleep(Duration::from_millis(50)).await;
         tracing::info!(
             "📤 Broadcasted service registration: {} methods={:?}",
             service_info.name,
@@ -267,8 +277,8 @@ impl ProcessHub {
                 service_method
             );
             let _ = self.query_services().await;
-            // Wait a bit for responses
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // Wait longer for responses to address multi-process timing issues
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
         // Try to find the service again after query

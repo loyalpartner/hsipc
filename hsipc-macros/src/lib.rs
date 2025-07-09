@@ -4,8 +4,11 @@ use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput, ItemImpl, ItemTrait};
 
 mod event;
+mod method;
+mod rpc;
 mod service;
 mod subscribe;
+mod subscription;
 
 /// Derive macro for creating events
 #[proc_macro_derive(Event, attributes(event))]
@@ -47,4 +50,24 @@ pub fn service_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn subscribe(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemFn);
     subscribe::subscribe_impl(args, input)
+}
+
+// New RPC System Macros
+
+/// Main RPC macro - generates server and client code
+#[proc_macro_attribute]
+pub fn rpc(args: TokenStream, input: TokenStream) -> TokenStream {
+    rpc::rpc_impl(args, input)
+}
+
+/// Method attribute macro for RPC methods
+#[proc_macro_attribute]
+pub fn method(args: TokenStream, input: TokenStream) -> TokenStream {
+    method::method_impl(args, input)
+}
+
+/// Subscription attribute macro for RPC subscriptions
+#[proc_macro_attribute]
+pub fn subscription(args: TokenStream, input: TokenStream) -> TokenStream {
+    subscription::subscription_impl(args, input)
 }

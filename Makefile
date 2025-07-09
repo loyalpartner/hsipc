@@ -1,29 +1,39 @@
-.PHONY: quick full check watch multiprocess benchmark bench-quick bench-core
+.PHONY: quick full check watch multiprocess demo integration benchmark bench-quick bench-core
 
-# 快速验证（30秒）
+# Quick verification (30 seconds) - Primary development command
 quick:
-	@echo "🚀 快速验证..."
-	@cargo check --all-targets || (echo "❌ 语法检查失败"; exit 1)
-	@cd examples/trait_based_service && cargo run demo || (echo "❌ 核心功能失败"; exit 1)
-	@echo "✅ 快速验证通过！"
+	@echo "🚀 Quick verification..."
+	@cargo check --all-targets || (echo "❌ Syntax check failed"; exit 1)
+	@cargo run --example rpc_system_demo demo || (echo "❌ Core functionality failed"; exit 1)
+	@echo "✅ Quick verification passed!"
 
-# 完整测试（5分钟）
+# Full testing (5 minutes) - Pre-commit verification
 full:
-	@echo "🧪 完整测试..."
-	@cargo test --all || (echo "❌ 测试失败"; exit 1)
-	@cargo clippy --all-targets || (echo "❌ 代码质量检查失败"; exit 1)
-	@cargo fmt --check || (echo "❌ 代码格式检查失败"; exit 1)
-	@echo "✅ 完整测试通过！"
+	@echo "🧪 Full testing..."
+	@cargo test --all || (echo "❌ Tests failed"; exit 1)
+	@cargo clippy --all-targets || (echo "❌ Code quality check failed"; exit 1)
+	@cargo fmt --check || (echo "❌ Code format check failed"; exit 1)
+	@echo "✅ Full testing passed!"
 
-# 语法检查（2秒）
+# Syntax check (2 seconds) - Fastest feedback
 check:
-	@echo "🔍 语法检查..."
+	@echo "🔍 Syntax check..."
 	@cargo check --all-targets
 
-# 实时监控
+# Core RPC demo (30 seconds) - Example-driven testing
+demo:
+	@echo "🎬 Running RPC system demo..."
+	@cargo run --example rpc_system_demo demo
+
+# Integration test (focused testing)
+integration:
+	@echo "🔧 Running integration tests..."
+	@cargo test --test integration
+
+# Real-time monitoring
 watch:
-	@echo "👀 开始实时监控..."
-	@cd examples/trait_based_service && cargo watch -x 'run demo'
+	@echo "👀 Starting real-time monitoring..."
+	@cargo watch -x 'run --example rpc_system_demo demo'
 
 # 格式化代码
 fmt:

@@ -13,3 +13,11 @@ proc-macro = true
 syn = { workspace = true }
 quote = { workspace = true }
 proc-macro2 = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+hsipc = { path = "../hsipc" }
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true }
+thiserror = { workspace = true }
+bincode = { workspace = true }

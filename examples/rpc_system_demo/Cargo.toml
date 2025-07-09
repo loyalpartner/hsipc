@@ -1,0 +1,13 @@
+[package]
+name = "rpc_system_demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hsipc = { path = "../../hsipc" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+clap = { version = "4.0", features = ["derive"] }
+futures = { workspace = true }
+bincode = { workspace = true }

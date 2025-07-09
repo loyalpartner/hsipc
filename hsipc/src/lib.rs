@@ -94,6 +94,7 @@ pub mod event;
 pub mod hub;
 pub mod message;
 pub mod service;
+pub mod subscription;
 pub mod transport;
 pub mod transport_ipmb;
 
@@ -105,14 +106,18 @@ mod error_tests;
 
 // Re-exports
 pub use error::{Error, Result};
-pub use event::{Event, Subscriber};
+pub use event::{Event, Subscriber, Subscription};
 pub use hub::{ProcessHub, SyncProcessHub};
 pub use message::{Message, Request, Response};
 pub use service::{Service, ServiceRegistry};
+pub use subscription::{PendingSubscriptionSink, SubscriptionSink, RpcSubscription};
+
+// Type alias for subscription results
+pub type SubscriptionResult = Result<()>;
 
 // Re-export macros when feature is enabled
 #[cfg(feature = "macros")]
-pub use hsipc_macros::{service, service_impl, service_trait, subscribe, Event};
+pub use hsipc_macros::{rpc, method, subscription, service, service_impl, service_trait, subscribe, Event};
 
 // Macro usage documentation
 #[cfg(feature = "macros")]

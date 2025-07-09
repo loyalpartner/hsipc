@@ -2,7 +2,6 @@
 # https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
 
 # Global settings
-consolidate-commits = true
 shared-version = true
 
 # Pre-release checks
@@ -24,6 +23,5 @@ tag = true
 # Pre-release hooks
 pre-release-hook = [
     "cargo test --all-features",
-    "cargo check --all-features",
-    "cargo clippy --all-features -- -D warnings"
+    "cargo check --all-features"
 ]

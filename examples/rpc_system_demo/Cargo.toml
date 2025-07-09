@@ -2,6 +2,7 @@
 name = "rpc_system_demo"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 hsipc = { path = "../../hsipc" }

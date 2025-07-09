@@ -4,6 +4,9 @@ members = [
     "hsipc-macros",
     "examples/*",
 ]
+exclude = [
+    "examples/*",
+]
 resolver = "2"
 
 [workspace.package]

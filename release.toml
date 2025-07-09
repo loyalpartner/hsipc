@@ -5,10 +5,10 @@
 shared-version = true
 
 # Pre-release checks
-pre-release-commit-message = "chore: release {{version}}"
+pre-release-commit-message = "chore: release"
 
 # Git settings
-tag-message = "chore: release {{version}}"
+tag-message = "chore: release"
 tag-name = "v{{version}}"
 push-remote = "origin"
 

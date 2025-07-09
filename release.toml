@@ -1,14 +1,14 @@
-# cargo-release configuration
+# cargo-release production configuration
 # https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
 
 # Global settings
 shared-version = true
 
 # Pre-release checks
-pre-release-commit-message = "chore: release"
+pre-release-commit-message = "chore: release {{version}}"
 
 # Git settings
-tag-message = "chore: release"
+tag-message = "chore: release {{version}}"
 tag-name = "v{{version}}"
 push-remote = "origin"
 
@@ -17,8 +17,10 @@ publish = true
 push = true
 tag = true
 
-# Pre-release hooks (disabled for now)
-# pre-release-hook = [
-#     "cargo test --workspace --all-features",
-#     "cargo check --workspace --all-features"
-# ]
+# Pre-release hooks (enabled for production)
+pre-release-hook = [
+    "cargo test --workspace --all-features",
+    "cargo check --workspace --all-features",
+    "cargo fmt --check",
+    "cargo clippy --workspace --all-features -- -D warnings -A clippy::empty-line-after-doc-comments -A clippy::mixed-attributes-style"
+]

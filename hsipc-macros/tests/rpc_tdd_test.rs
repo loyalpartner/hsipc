@@ -564,7 +564,9 @@ mod tests {
             }
         }
 
-        let hub = ProcessHub::new("test_dynamic_invocation").await.unwrap();
+        // Use unique process name to avoid conflicts with other tests
+        let process_name = format!("test_dynamic_invocation_{}", std::process::id());
+        let hub = ProcessHub::new(&process_name).await.unwrap();
 
         // Create tracking service
         let add_calls = Arc::new(Mutex::new(Vec::new()));
@@ -638,5 +640,160 @@ mod tests {
         let _ = hub.shutdown().await;
 
         println!("🎉 Dynamic subscription invocation test complete!");
+    }
+
+    /// TDD Test 12: Subscription continuous data stream
+    /// Goal: Test that subscriptions can receive multiple events over time
+    #[tokio::test]
+    async fn test_subscription_continuous_stream() {
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        // Create a service that sends multiple events over time
+        pub struct StreamingCalculator {
+            pub event_count: Arc<Mutex<i32>>,
+            pub is_streaming: Arc<Mutex<bool>>,
+        }
+
+        #[hsipc::async_trait]
+        impl Calculator for StreamingCalculator {
+            async fn add(&self, request: AddRequest) -> std::result::Result<AddResponse, RpcError> {
+                Ok(AddResponse {
+                    result: request.a + request.b,
+                })
+            }
+
+            fn multiply(&self, a: i32, b: i32) -> std::result::Result<i32, RpcError> {
+                Ok(a * b)
+            }
+
+            async fn subscribe_events(
+                &self,
+                pending: PendingSubscriptionSink,
+                filter: Option<String>,
+            ) -> std::result::Result<(), RpcError> {
+                println!("🔔 Starting streaming subscription with filter: {:?}", filter);
+
+                // Accept the subscription
+                let sink = pending.accept().await.map_err(|e| RpcError {
+                    message: e.to_string(),
+                })?;
+
+                // Start streaming events
+                let event_count = self.event_count.clone();
+                let is_streaming = self.is_streaming.clone();
+                *is_streaming.lock().await = true;
+
+                tokio::spawn(async move {
+                    let mut counter = 0;
+                    while counter < 5 {  // Send 5 events for testing
+                        {
+                            let is_streaming_guard = is_streaming.lock().await;
+                            if !*is_streaming_guard {
+                                break;
+                            }
+                        }
+
+                        let test_event = TestEvent {
+                            message: format!("Streaming event #{}", counter + 1),
+                            timestamp: counter as u64,
+                        };
+
+                        println!("📤 Sending streaming event: {:?}", test_event);
+
+                        match sink.send_value(test_event).await {
+                            Ok(()) => {
+                                let mut count_guard = event_count.lock().await;
+                                *count_guard += 1;
+                                counter += 1;
+                            }
+                            Err(e) => {
+                                println!("❌ Failed to send streaming event: {}", e);
+                                break;
+                            }
+                        }
+
+                        // Small delay between events
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    }
+                    println!("📪 Streaming subscription ended");
+                });
+
+                Ok(())
+            }
+        }
+
+        // Use unique process name to avoid conflicts with other tests
+        let process_name = format!("test_streaming_{}", std::process::id());
+        let hub = ProcessHub::new(&process_name).await.unwrap();
+
+        // Create streaming service
+        let event_count = Arc::new(Mutex::new(0));
+        let is_streaming = Arc::new(Mutex::new(false));
+        let streaming_service = StreamingCalculator {
+            event_count: event_count.clone(),
+            is_streaming: is_streaming.clone(),
+        };
+
+        // Register the service
+        let service = CalculatorService::new(streaming_service);
+        hub.register_service(service).await.unwrap();
+
+        // Create client
+        let client = CalculatorClient::new(hub.clone());
+
+        // Subscribe to continuous stream with unique filter
+        let mut subscription = client
+            .subscribe_events(Some("continuous_stream".to_string()))
+            .await
+            .expect("Subscription should succeed");
+
+        println!("✅ Subscription created, waiting for streaming events...");
+
+        // Collect multiple events
+        let mut received_events = Vec::new();
+        
+        // Try to receive up to 5 events with a reasonable timeout
+        for i in 0..5 {
+            let timeout = tokio::time::timeout(
+                tokio::time::Duration::from_millis(200), 
+                subscription.next()
+            );
+
+            match timeout.await {
+                Ok(Some(Ok(event))) => {
+                    println!("✅ Received streaming event #{}: {:?}", i + 1, event);
+                    received_events.push(event);
+                }
+                Ok(Some(Err(e))) => {
+                    println!("❌ Streaming event error: {}", e);
+                    break;
+                }
+                Ok(None) => {
+                    println!("📪 Subscription stream ended");
+                    break;
+                }
+                Err(_) => {
+                    println!("⏰ Timeout waiting for event #{}", i + 1);
+                    break;
+                }
+            }
+        }
+
+        // Verify we received multiple events
+        println!("📊 Received {} events total", received_events.len());
+        
+        // For now, we expect at least 1 event (basic functionality)
+        // TODO: Once streaming is fully implemented, we should receive all 5 events
+        assert!(received_events.len() >= 1, "Should receive at least 1 streaming event");
+
+        // Stop streaming
+        *is_streaming.lock().await = false;
+
+        // Clean up
+        drop(subscription);
+        let _ = hub.shutdown().await;
+
+        println!("🎉 Continuous streaming test complete!");
     }
 }

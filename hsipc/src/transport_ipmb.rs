@@ -75,17 +75,28 @@ impl Transport for IpmbTransport {
         // Try to send with retry on certain errors
         match self.sender.send(ipmb_message) {
             Ok(()) => {
-                tracing::debug!("📤 Sent IPMB message to {:?}", msg.target);
+                tracing::debug!("📤 Sent IPMB message type: {:?} id: {} to {:?}", 
+                    msg.msg_type, msg.id, msg.target);
                 Ok(())
             }
             Err(e) => {
-                // Log the error but don't fail completely for "Invalid argument" errors
-                // as they seem to be related to IPMB internal socket handling
                 let error_msg = format!("IPMB send failed: {e}");
+                
+                // Be more conservative about ignoring errors
                 if error_msg.contains("Invalid argument") {
-                    tracing::warn!("🚨 IPMB send warning (non-fatal): {}", error_msg);
-                    Ok(()) // Treat as non-fatal for now
+                    tracing::error!("🚨 IPMB send error (CRITICAL): {} - This may cause message loss!", error_msg);
+                    tracing::error!("🚨 Message details: type={:?} id={} target={:?}", 
+                        msg.msg_type, msg.id, msg.target);
+                    
+                    // For subscription requests, this is critical - don't ignore
+                    if msg.msg_type == crate::message::MessageType::SubscriptionRequest {
+                        return Err(Error::transport_msg(format!("Critical IPMB error for subscription: {}", error_msg)));
+                    }
+                    
+                    // Still treat other messages as warnings for now
+                    Ok(())
                 } else {
+                    tracing::error!("❌ IPMB send failed: {}", error_msg);
                     Err(Error::transport_msg(error_msg))
                 }
             }

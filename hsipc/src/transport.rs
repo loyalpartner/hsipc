@@ -62,7 +62,9 @@ struct ProcessInfo {
 
 impl MessageBus {
     fn new() -> Self {
-        let (sender, _) = broadcast::channel(1024);
+        // Increase broadcast channel capacity to handle message bursts
+        // This helps prevent receiver lag in high-throughput scenarios
+        let (sender, _) = broadcast::channel(8192);
         Self {
             sender,
             processes: Arc::new(RwLock::new(HashMap::new())),
@@ -84,10 +86,22 @@ impl MessageBus {
     }
 
     async fn send_message(&self, msg: Message) -> Result<()> {
-        self.sender
-            .send(msg)
-            .map_err(|_| Error::connection_msg("broadcast channel send failed"))?;
-        Ok(())
+        tracing::info!("🚌 MessageBus broadcasting message type: {:?} id: {}", msg.msg_type, msg.id);
+        
+        // Get the number of active receivers before sending
+        let receiver_count = self.sender.receiver_count();
+        tracing::info!("📊 Active receivers: {}", receiver_count);
+        
+        match self.sender.send(msg.clone()) {
+            Ok(sent_count) => {
+                tracing::info!("✅ MessageBus broadcast successful for message type: {:?}, sent to {} receivers", msg.msg_type, sent_count);
+                Ok(())
+            }
+            Err(_) => {
+                tracing::error!("❌ MessageBus broadcast failed - no active receivers!");
+                Err(Error::connection_msg("broadcast channel send failed"))
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -114,27 +128,45 @@ impl IpmbTransport {
         // Register with the isolated message bus
         let mut bus_receiver = message_bus.register_process(process_name).await;
 
-        // Create a local channel for filtered messages
-        let (local_tx, local_rx) = mpsc::channel(1024);
+        // Create a local channel for filtered messages with larger buffer
+        // to handle bursts of messages without dropping
+        let (local_tx, local_rx) = mpsc::channel(4096);
 
         // Spawn a task to filter messages for this process
         let process_name_clone = process_name.to_string();
         let receiver_task = tokio::spawn(async move {
-            while let Ok(msg) = bus_receiver.recv().await {
-                // Filter messages for this process
-                let should_receive = match &msg.target {
-                    Some(target) => target == &process_name_clone,
-                    None => {
-                        // This is a broadcast/event message, or a service call
-                        // Both service calls and events should be received
-                        true
-                    }
-                };
+            tracing::debug!("🚌 Starting message filter task for process: {}", process_name_clone);
+            loop {
+                match bus_receiver.recv().await {
+                    Ok(msg) => {
+                        // Filter messages for this process
+                        let should_receive = match &msg.target {
+                            Some(target) => target == &process_name_clone,
+                            None => true, // Broadcast messages
+                        };
 
-                if should_receive && local_tx.send(msg).await.is_err() {
-                    break; // Receiver dropped
+                        if should_receive {
+                            tracing::info!("✅ Forwarding message type: {:?} id: {} to process: {}", msg.msg_type, msg.id, process_name_clone);
+                            if local_tx.send(msg).await.is_err() {
+                                tracing::error!("📪 Local receiver channel closed for process: {}", process_name_clone);
+                                break; // Receiver dropped
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        // Some messages were skipped due to slow processing
+                        tracing::error!("⚠️  CRITICAL: Broadcast receiver lagged, skipped {} messages for process: {}. This may cause message loss!", skipped, process_name_clone);
+                        // Continue processing - don't exit the loop
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        // Broadcast channel closed, exit gracefully
+                        tracing::info!("📪 Broadcast channel closed for process: {}", process_name_clone);
+                        break;
+                    }
                 }
             }
+            tracing::debug!("🔚 Message filter task ended for process: {}", process_name_clone);
         });
 
         Ok(Self {
@@ -149,16 +181,47 @@ impl IpmbTransport {
 #[async_trait]
 impl Transport for IpmbTransport {
     async fn send(&self, msg: Message) -> Result<()> {
+        tracing::debug!("🚌 Transport sending message type: {:?} from {}", msg.msg_type, msg.source);
         let message_bus = get_message_bus().await;
         message_bus.send_message(msg).await
     }
 
     async fn recv(&self) -> Result<Message> {
-        let mut receiver = self.local_receiver.write().await;
-        receiver
-            .recv()
-            .await
-            .ok_or(Error::connection_msg("message channel closed"))
+        tracing::debug!("🔍 Transport recv() called for process: {}", self.process_name);
+        
+        // Use try_write to avoid blocking if another recv is in progress
+        // This helps prevent deadlocks in high-concurrency scenarios
+        match self.local_receiver.try_write() {
+            Ok(mut receiver) => {
+                tracing::debug!("✅ Got receiver lock immediately for process: {}", self.process_name);
+                match receiver.recv().await {
+                    Some(msg) => {
+                        tracing::info!("📨 Received message type: {:?} id: {} for process: {}", msg.msg_type, msg.id, self.process_name);
+                        Ok(msg)
+                    }
+                    None => {
+                        tracing::error!("❌ Local channel closed for process: {}", self.process_name);
+                        Err(Error::connection_msg("message channel closed"))
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::debug!("⏳ Waiting for receiver lock for process: {}", self.process_name);
+                // If we can't get the lock immediately, wait and retry
+                let mut receiver = self.local_receiver.write().await;
+                tracing::debug!("✅ Got receiver lock after waiting for process: {}", self.process_name);
+                match receiver.recv().await {
+                    Some(msg) => {
+                        tracing::info!("📨 Received message type: {:?} id: {} for process: {}", msg.msg_type, msg.id, self.process_name);
+                        Ok(msg)
+                    }
+                    None => {
+                        tracing::error!("❌ Local channel closed for process: {}", self.process_name);
+                        Err(Error::connection_msg("message channel closed"))
+                    }
+                }
+            }
+        }
     }
 
     async fn close(&self) -> Result<()> {

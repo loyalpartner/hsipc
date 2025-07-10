@@ -31,7 +31,7 @@ pub struct Message {
     pub metadata: MessageMetadata,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MessageType {
     Request,
     Response,

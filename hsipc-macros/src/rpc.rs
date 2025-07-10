@@ -378,6 +378,8 @@ fn generate_subscription_client_method(
 
                 // Get the subscription ID from the message
                 let subscription_id = request_msg.correlation_id.unwrap();
+                
+                println!("📡 Sending subscription request: method={}, id={}", #rpc_method_name, subscription_id);
 
                 // Create channel for receiving subscription data
                 let (tx, rx) = hsipc::tokio::sync::mpsc::unbounded_channel();
@@ -445,6 +447,8 @@ fn generate_subscription_client_method(
 
                 // Get the subscription ID from the message
                 let subscription_id = request_msg.correlation_id.unwrap();
+                
+                println!("📡 Sending subscription request: method={}, id={}", #rpc_method_name, subscription_id);
 
                 // Create channel for receiving subscription data
                 let (tx, rx) = hsipc::tokio::sync::mpsc::unbounded_channel();

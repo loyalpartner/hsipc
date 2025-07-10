@@ -180,6 +180,7 @@ impl ProcessHub {
 
                 match recv_result {
                     Ok(Ok(msg)) => {
+                        tracing::info!("📨 Message loop processing: {:?} from {} id={}", msg.msg_type, msg.source, msg.id);
                         let _ = Self::process_message(
                             msg,
                             &service_registry,
@@ -191,6 +192,7 @@ impl ProcessHub {
                             &hub_name,
                         )
                         .await;
+                        tracing::info!("✅ Message loop completed processing message");
                     }
                     Ok(Err(e)) => {
                         tracing::error!("📥 Message receive error: {}", e);
@@ -335,7 +337,16 @@ impl ProcessHub {
                 }
             }
             MessageType::SubscriptionRequest => {
-                Self::handle_subscription_request(msg, service_registry, transport, hub_name).await;
+                tracing::info!("📥 Processing subscription request from {} - msg loop not blocked", msg.source);
+                // Spawn async task to handle subscription request to avoid blocking the message loop
+                let service_registry_clone = service_registry.clone();
+                let transport_clone = transport.clone();
+                let hub_name_clone = hub_name.to_string();
+                tokio::spawn(async move {
+                    tracing::info!("🚀 Starting subscription handler task");
+                    Self::handle_subscription_request(msg, &service_registry_clone, &transport_clone, &hub_name_clone).await;
+                    tracing::info!("🏁 Subscription handler task completed");
+                });
             }
             MessageType::SubscriptionAccept => {
                 // Handle subscription accept from server
@@ -582,7 +593,10 @@ impl ProcessHub {
 
     /// Send a message through the transport layer
     pub async fn send_message(&self, msg: Message) -> Result<()> {
-        self.transport.send(msg).await
+        tracing::info!("📤 ProcessHub sending message type: {:?} to {:?} id={}", msg.msg_type, msg.target, msg.id);
+        let result = self.transport.send(msg).await;
+        tracing::info!("📤 Message send result: {:?}", result);
+        result
     }
 
     /// Register a client-side subscription for data forwarding
@@ -606,6 +620,8 @@ impl ProcessHub {
         transport: &Arc<dyn Transport>,
         hub_name: &str,
     ) {
+        tracing::debug!("🔧 Starting subscription request handler");
+        let start_time = std::time::Instant::now();
         // Parse the subscription request message
         if let Ok(subscription_msg) =
             bincode::deserialize::<crate::subscription::SubscriptionMessage>(&msg.payload)
@@ -651,7 +667,9 @@ impl ProcessHub {
                     let msg_source = msg.source.clone();
 
                     tokio::spawn(async move {
+                        tracing::debug!("📡 Starting data forwarding task for subscription {}", id);
                         while let Some(data) = sink_rx.recv().await {
+                            tracing::debug!("📤 Forwarding data for subscription {}", id);
                             let data_msg = crate::message::Message::subscription_data(
                                 hub_name_clone.clone(),
                                 msg_source.clone(),
@@ -745,6 +763,9 @@ impl ProcessHub {
         } else {
             tracing::error!("📥 Failed to parse subscription request message");
         }
+        
+        let elapsed = start_time.elapsed();
+        tracing::debug!("🔧 Subscription request handler completed in {:?}", elapsed);
     }
 
     /// Shutdown the hub gracefully

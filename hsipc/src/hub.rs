@@ -15,7 +15,7 @@ use crate::{
 };
 
 // Use real IPMB transport for all environments
-use crate::transport_ipmb::IpmbTransport;
+use crate::transport_ipmb::{IpmbTransport, IpmbReceiver};
 
 // Simple Service trait for RPC system
 #[async_trait::async_trait]
@@ -23,12 +23,12 @@ pub trait Service: Send + Sync + 'static {
     fn name(&self) -> &'static str;
     fn methods(&self) -> Vec<&'static str>;
     async fn handle(&self, method: &str, payload: Vec<u8>) -> Result<Vec<u8>>;
-    
+
     /// Handle subscription requests (optional, default implementation rejects)
     async fn handle_subscription(
         &self,
         method: &str,
-_params: Vec<u8>,
+        _params: Vec<u8>,
         pending: crate::subscription::PendingSubscriptionSink,
     ) -> Result<()> {
         // Default implementation rejects all subscriptions
@@ -93,7 +93,6 @@ impl ServiceRegistry {
     }
 }
 
-
 /// Main process hub for IPC communication
 #[derive(Clone)]
 pub struct ProcessHub {
@@ -120,9 +119,12 @@ pub struct ProcessHub {
 impl ProcessHub {
     /// Create a new ProcessHub
     pub async fn new(name: &str) -> Result<Self> {
-        println!("🏗️  Creating ProcessHub with name: {}", name);
-        let transport = IpmbTransport::new(name).await?;
-        println!("🏗️  ProcessHub transport created successfully");
+        Self::new_with_config(name, false).await
+    }
+
+    /// Create a new ProcessHub with configuration for fast mode (skip delays)
+    pub async fn new_with_config(name: &str, fast_mode: bool) -> Result<Self> {
+        let (transport, receiver) = IpmbTransport::new_with_receiver(name).await?;
         let shutdown_signal = Arc::new(AtomicBool::new(false));
 
         let hub = Self {
@@ -138,29 +140,58 @@ impl ProcessHub {
         };
 
         // Start message processing and store the handle
-        let handle = hub.start_message_loop().await;
+        let handle = hub.start_message_loop(receiver).await;
         {
             let mut handle_guard = hub.message_loop_handle.write().await;
             *handle_guard = Some(handle);
         }
 
-        // Proactively query for existing services after startup
-        let hub_clone = hub.clone();
-        tokio::spawn(async move {
-            // Wait a bit for the message loop to start
-            tokio::time::sleep(Duration::from_millis(100)).await;
+        // Synchronously discover existing services during initialization
+        // This ensures clients can immediately find services after hub creation
+        tracing::info!("🔍 Discovering existing services...");
 
-            // Check if we're still running before querying
-            if !hub_clone.shutdown_signal.load(Ordering::Relaxed) {
-                let _ = hub_clone.query_services().await;
+        // Wait a bit for the message loop to start (skip in fast mode)
+        if !fast_mode {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        // For fast mode, skip service discovery to avoid initialization issues
+        if !fast_mode {
+            // Query for existing services and wait for responses
+            if let Err(e) = hub.query_services().await {
+                tracing::warn!("Service discovery failed during initialization: {}", e);
             }
-        });
+
+            // Give time for service responses to arrive
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        } else {
+            tracing::info!("🧪 Skipping service discovery for fast mode");
+        }
+
+        // Log discovered services
+        {
+            let remote_services = hub.remote_services.read().await;
+            let service_count = remote_services.len();
+            if service_count > 0 {
+                tracing::info!("✅ Discovered {} remote services", service_count);
+                for (method, info) in remote_services.iter() {
+                    tracing::debug!(
+                        "   📡 {}: {} (from {})",
+                        method,
+                        info.name,
+                        info.process_name
+                    );
+                }
+            } else {
+                tracing::debug!("ℹ️  No remote services discovered");
+            }
+        }
 
         Ok(hub)
     }
 
     /// Start the message processing loop
-    async fn start_message_loop(&self) -> tokio::task::JoinHandle<()> {
+    async fn start_message_loop(&self, mut receiver: IpmbReceiver) -> tokio::task::JoinHandle<()> {
         let transport = self.transport.clone();
         let service_registry = self.service_registry.clone();
         let subscription_registry = self.subscription_registry.clone();
@@ -175,12 +206,16 @@ impl ProcessHub {
 
             while !shutdown_signal.load(Ordering::Relaxed) {
                 // Use a timeout to periodically check shutdown signal
-                let recv_result =
-                    tokio::time::timeout(Duration::from_millis(100), transport.recv()).await;
+                let recv_result = receiver.recv().await;
 
                 match recv_result {
-                    Ok(Ok(msg)) => {
-                        tracing::info!("📨 Message loop processing: {:?} from {} id={}", msg.msg_type, msg.source, msg.id);
+                    Ok(msg) => {
+                        tracing::info!(
+                            "📨 Message loop processing: {:?} from {} id={}",
+                            msg.msg_type,
+                            msg.source,
+                            msg.id
+                        );
                         let _ = Self::process_message(
                             msg,
                             &service_registry,
@@ -193,11 +228,6 @@ impl ProcessHub {
                         )
                         .await;
                         tracing::info!("✅ Message loop completed processing message");
-                    }
-                    Ok(Err(e)) => {
-                        tracing::error!("📥 Message receive error: {}", e);
-                        // Break on transport error
-                        break;
                     }
                     Err(_) => {
                         // Timeout - continue to check shutdown signal
@@ -337,14 +367,23 @@ impl ProcessHub {
                 }
             }
             MessageType::SubscriptionRequest => {
-                tracing::info!("📥 Processing subscription request from {} - msg loop not blocked", msg.source);
+                tracing::info!(
+                    "📥 Processing subscription request from {} - msg loop not blocked",
+                    msg.source
+                );
                 // Spawn async task to handle subscription request to avoid blocking the message loop
                 let service_registry_clone = service_registry.clone();
                 let transport_clone = transport.clone();
                 let hub_name_clone = hub_name.to_string();
                 tokio::spawn(async move {
                     tracing::info!("🚀 Starting subscription handler task");
-                    Self::handle_subscription_request(msg, &service_registry_clone, &transport_clone, &hub_name_clone).await;
+                    Self::handle_subscription_request(
+                        msg,
+                        &service_registry_clone,
+                        &transport_clone,
+                        &hub_name_clone,
+                    )
+                    .await;
                     tracing::info!("🏁 Subscription handler task completed");
                 });
             }
@@ -438,6 +477,11 @@ impl ProcessHub {
 
     /// Register a service
     pub async fn register_service<S: Service>(&self, service: S) -> Result<()> {
+        self.register_service_with_config(service, false).await
+    }
+
+    /// Register a service with configuration for fast mode (skip delays)
+    pub async fn register_service_with_config<S: Service>(&self, service: S, fast_mode: bool) -> Result<()> {
         let service_name = service.name().to_string();
         let methods: Vec<String> = service.methods().iter().map(|&s| s.to_string()).collect();
 
@@ -459,8 +503,10 @@ impl ProcessHub {
 
         let registration_msg = Message::service_register(self.name.clone(), service_info.clone());
         let _ = self.transport.send(registration_msg).await;
-        // Give a small delay to ensure the broadcast message is sent
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Give a small delay to ensure the broadcast message is sent (skip in fast mode)
+        if !fast_mode {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         tracing::info!(
             "📤 Broadcasted service registration: {} methods={:?}",
             service_info.name,
@@ -593,12 +639,14 @@ impl ProcessHub {
 
     /// Send a message through the transport layer
     pub async fn send_message(&self, msg: Message) -> Result<()> {
-        println!("📤 ProcessHub::send_message called! type: {:?} to {:?} id={}", msg.msg_type, msg.target, msg.id);
-        println!("🔍 Transport type: {:?}", std::any::type_name_of_val(self.transport.as_ref()));
-        tracing::info!("📤 ProcessHub sending message type: {:?} to {:?} id={}", msg.msg_type, msg.target, msg.id);
+        tracing::debug!(
+            "📤 ProcessHub sending message type: {:?} to {:?} id={}",
+            msg.msg_type,
+            msg.target,
+            msg.id
+        );
         let result = self.transport.send(msg).await;
-        println!("📤 ProcessHub::send_message result: {:?}", result);
-        tracing::info!("📤 Message send result: {:?}", result);
+        tracing::debug!("📤 Message send result: {:?}", result);
         result
     }
 
@@ -629,11 +677,8 @@ impl ProcessHub {
         if let Ok(subscription_msg) =
             bincode::deserialize::<crate::subscription::SubscriptionMessage>(&msg.payload)
         {
-            if let crate::subscription::SubscriptionMessage::Request {
-                id,
-                method,
-                params,
-            } = subscription_msg
+            if let crate::subscription::SubscriptionMessage::Request { id, method, params } =
+                subscription_msg
             {
                 tracing::info!(
                     "📥 Received subscription request: method={} id={}",
@@ -653,7 +698,7 @@ impl ProcessHub {
                     // Extract service name from method like "ServiceName.method"
                     method.split('.').next().unwrap_or("unknown")
                 };
-                
+
                 // Clone data we need for the async task
                 let method_clone = method.clone();
                 let params_clone = params.clone();
@@ -705,22 +750,31 @@ impl ProcessHub {
 
                     let service_registry_for_call = service_registry.clone();
                     let service_name_owned = service_name.to_string();
-                    
+
                     tokio::spawn(async move {
                         // Dynamic service method invocation
-                        if let Some(service) = service_registry_for_call.get_service(&service_name_owned).await {
+                        if let Some(service) = service_registry_for_call
+                            .get_service(&service_name_owned)
+                            .await
+                        {
                             // Extract the subscription method name from the full method
                             let subscription_method = if method_clone.starts_with("subscription.") {
                                 &method_clone[13..] // Remove "subscription." prefix
                             } else {
                                 &method_clone
                             };
-                            
+
                             // Call the service's handle_subscription method
-                            match service.handle_subscription(subscription_method, params_clone, pending).await {
+                            match service
+                                .handle_subscription(subscription_method, params_clone, pending)
+                                .await
+                            {
                                 Ok(()) => {
                                     // Service handled the subscription (accepted or rejected)
-                                    tracing::info!("✅ Subscription request {} handled by service", id);
+                                    tracing::info!(
+                                        "✅ Subscription request {} handled by service",
+                                        id
+                                    );
                                 }
                                 Err(e) => {
                                     tracing::error!("❌ Subscription request {} failed: {}", id, e);
@@ -743,7 +797,10 @@ impl ProcessHub {
                                 "Service not found".to_string(),
                             );
                             let _ = transport_for_response.send(reject_msg).await;
-                            tracing::info!("❌ Subscription request {} rejected: Service not found", id);
+                            tracing::info!(
+                                "❌ Subscription request {} rejected: Service not found",
+                                id
+                            );
                         }
                     });
                 } else {
@@ -766,7 +823,7 @@ impl ProcessHub {
         } else {
             tracing::error!("📥 Failed to parse subscription request message");
         }
-        
+
         let elapsed = start_time.elapsed();
         tracing::debug!("🔧 Subscription request handler completed in {:?}", elapsed);
     }

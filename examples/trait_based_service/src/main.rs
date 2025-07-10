@@ -176,7 +176,13 @@ async fn run_client() -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with line numbers and compact format
+    tracing_subscriber::fmt()
+        .with_line_number(true)
+        .with_file(true)
+        .with_target(false)
+        .compact()
+        .init();
 
     let args: Vec<String> = std::env::args().collect();
 

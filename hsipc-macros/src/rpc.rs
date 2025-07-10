@@ -385,8 +385,8 @@ fn generate_subscription_client_method(
                 // Register the subscription with the hub for data forwarding
                 self.hub.register_subscription(subscription_id, tx).await;
 
-                // Create the RPC subscription
-                let subscription = hsipc::RpcSubscription::new(subscription_id, rx);
+                // Create the RPC subscription with hub for cancellation support
+                let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
                 self.hub.send_message(request_msg).await?;
@@ -414,8 +414,8 @@ fn generate_subscription_client_method(
                 // Register the subscription with the hub for data forwarding
                 self.hub.register_subscription(subscription_id, tx).await;
 
-                // Create the RPC subscription
-                let subscription = hsipc::RpcSubscription::new(subscription_id, rx);
+                // Create the RPC subscription with hub for cancellation support
+                let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
                 self.hub.send_message(request_msg).await?;
@@ -452,8 +452,8 @@ fn generate_subscription_client_method(
                 // Register the subscription with the hub for data forwarding
                 self.hub.register_subscription(subscription_id, tx).await;
 
-                // Create the RPC subscription
-                let subscription = hsipc::RpcSubscription::new(subscription_id, rx);
+                // Create the RPC subscription with hub for cancellation support
+                let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
                 self.hub.send_message(request_msg).await?;

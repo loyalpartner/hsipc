@@ -17,6 +17,10 @@ pub struct PendingSubscriptionSink {
     id: Uuid,
     method: String,
     sender: Option<mpsc::UnboundedSender<serde_json::Value>>,
+    // For sending accept/reject messages back to client
+    transport: Option<std::sync::Arc<dyn crate::transport::Transport>>,
+    hub_name: Option<String>,
+    client_name: Option<String>,
 }
 
 impl PendingSubscriptionSink {
@@ -26,6 +30,28 @@ impl PendingSubscriptionSink {
             id,
             method,
             sender: Some(sender),
+            transport: None,
+            hub_name: None,
+            client_name: None,
+        }
+    }
+
+    /// Create a new pending subscription sink with transport for messaging
+    pub fn new_with_transport(
+        id: Uuid, 
+        method: String, 
+        sender: mpsc::UnboundedSender<serde_json::Value>,
+        transport: std::sync::Arc<dyn crate::transport::Transport>,
+        hub_name: String,
+        client_name: String,
+    ) -> Self {
+        Self {
+            id,
+            method,
+            sender: Some(sender),
+            transport: Some(transport),
+            hub_name: Some(hub_name),
+            client_name: Some(client_name),
         }
     }
 
@@ -39,7 +65,23 @@ impl PendingSubscriptionSink {
             .take()
             .ok_or_else(|| Error::runtime_msg("Subscription already accepted or rejected"))?;
 
-        // TODO: Send accept message to client through ProcessHub
+        // Send accept message to client if we have transport
+        if let (Some(transport), Some(hub_name), Some(client_name)) = 
+            (&self.transport, &self.hub_name, &self.client_name) {
+            let accept_msg = crate::Message::subscription_accept(
+                hub_name.clone(),
+                client_name.clone(),
+                self.id,
+            );
+            
+            if let Err(e) = transport.send(accept_msg).await {
+                tracing::warn!("Failed to send subscription accept message: {}", e);
+                // Don't fail the accept if we can't send the message
+            } else {
+                tracing::debug!("Sent subscription accept message for {}", self.id);
+            }
+        }
+
         tracing::trace!(
             "Subscription {} accepted for method {}",
             self.id,
@@ -54,7 +96,24 @@ impl PendingSubscriptionSink {
     /// This will send a rejection message to the client and consume
     /// the PendingSubscriptionSink.
     pub async fn reject(self, reason: String) -> Result<()> {
-        // TODO: Send reject message to client through ProcessHub
+        // Send reject message to client if we have transport
+        if let (Some(transport), Some(hub_name), Some(client_name)) = 
+            (&self.transport, &self.hub_name, &self.client_name) {
+            let reject_msg = crate::Message::subscription_reject(
+                hub_name.clone(),
+                client_name.clone(),
+                self.id,
+                reason.clone(),
+            );
+            
+            if let Err(e) = transport.send(reject_msg).await {
+                tracing::warn!("Failed to send subscription reject message: {}", e);
+                // Don't fail the reject if we can't send the message
+            } else {
+                tracing::debug!("Sent subscription reject message for {}", self.id);
+            }
+        }
+
         tracing::trace!(
             "Subscription {} rejected for method {}: {}",
             self.id,
@@ -146,6 +205,7 @@ impl SubscriptionSink {
 pub struct RpcSubscription<T> {
     id: Uuid,
     receiver: mpsc::UnboundedReceiver<serde_json::Value>,
+    hub: Option<crate::ProcessHub>,
     _phantom: PhantomData<T>,
 }
 
@@ -158,6 +218,21 @@ where
         Self {
             id,
             receiver,
+            hub: None,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Create a new RPC subscription with ProcessHub for cancellation support
+    pub fn new_with_hub(
+        id: Uuid, 
+        receiver: mpsc::UnboundedReceiver<serde_json::Value>, 
+        hub: crate::ProcessHub
+    ) -> Self {
+        Self {
+            id,
+            receiver,
+            hub: Some(hub),
             _phantom: PhantomData,
         }
     }
@@ -183,8 +258,26 @@ where
     /// This will close the receiver and notify the server that the
     /// subscription should be canceled.
     pub async fn cancel(self) -> Result<()> {
-        // TODO: Send cancel message to server through ProcessHub
         tracing::trace!("Subscription {} canceled", self.id);
+
+        // Send cancel message to server if we have a hub
+        if let Some(hub) = &self.hub {
+            let cancel_msg = crate::Message::subscription_cancel(
+                hub.name().to_string(),
+                "server".to_string(), // TODO: Get actual server process name
+                self.id,
+            );
+
+            // Send the cancel message
+            if let Err(e) = hub.send_message(cancel_msg).await {
+                tracing::warn!("Failed to send subscription cancel message: {}", e);
+                // Don't fail the cancel operation if we can't send the message
+            } else {
+                tracing::debug!("Sent subscription cancel message for {}", self.id);
+            }
+        } else {
+            tracing::debug!("No ProcessHub available for subscription {}, closing locally only", self.id);
+        }
 
         // Closing the receiver will signal the server that we're done
         drop(self.receiver);

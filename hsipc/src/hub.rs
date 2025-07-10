@@ -667,11 +667,14 @@ impl ProcessHub {
                         tracing::debug!("📪 Subscription {} data forwarding stopped", id);
                     });
 
-                    // Create the pending subscription sink
-                    let pending = crate::subscription::PendingSubscriptionSink::new(
+                    // Create the pending subscription sink with transport for messaging
+                    let pending = crate::subscription::PendingSubscriptionSink::new_with_transport(
                         id,
                         method.clone(),
                         sink_tx,
+                        transport.clone(),
+                        hub_name.to_string(),
+                        msg.source.clone(),
                     );
 
                     // Handle the subscription request

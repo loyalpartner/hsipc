@@ -25,14 +25,29 @@ pub struct IpmbTransport {
 impl IpmbTransport {
     /// Create a new IPMB transport
     pub async fn new(process_name: &str) -> Result<Self> {
+        // Create a process-specific bus name for testing to avoid conflicts
+        let bus_name = if cfg!(test) {
+            // For tests, use process ID to create isolated bus per test process
+            // This ensures tests in different processes don't interfere
+            let pid = std::process::id();
+            format!("com.hsipc.test.{}", pid)
+        } else {
+            // For production, use a shared bus
+            "com.hsipc.bus".to_string()
+        };
+
         // Create IPMB options
-        let options = ipmb::Options::new("com.hsipc.bus", ipmb::label!(process_name), "");
+        let options = ipmb::Options::new(&bus_name, ipmb::label!(process_name), "");
 
         // Join the IPMB bus
         let (sender, receiver) = ipmb::join::<IpmbMessage, IpmbMessage>(options, None)
             .map_err(|e| Error::transport_msg(format!("IPMB join failed: {e}")))?;
 
-        tracing::info!("🚌 Joined IPMB bus as process: {}", process_name);
+        if cfg!(test) {
+            tracing::debug!("🧪 Joined test IPMB bus {} as process: {}", bus_name, process_name);
+        } else {
+            tracing::info!("🚌 Joined IPMB bus as process: {}", process_name);
+        }
 
         Ok(Self {
             sender,

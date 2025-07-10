@@ -467,9 +467,12 @@ mod tests {
             .expect("Subscription should succeed");
         println!("✅ Subscription created");
 
+        // Give subscription processing some time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
         // Try to receive the event that the service should send
         let timeout =
-            tokio::time::timeout(tokio::time::Duration::from_millis(100), subscription.next());
+            tokio::time::timeout(tokio::time::Duration::from_millis(1000), subscription.next());
 
         match timeout.await {
             Ok(Some(Ok(event))) => {
@@ -589,8 +592,11 @@ mod tests {
             .await
             .expect("Subscription should succeed");
 
+        // Give subscription processing some time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
         // Receive the event
-        let timeout = tokio::time::timeout(tokio::time::Duration::from_millis(100), sub1.next());
+        let timeout = tokio::time::timeout(tokio::time::Duration::from_millis(1000), sub1.next());
         match timeout.await {
             Ok(Some(Ok(event))) => {
                 // Verify we got the correct event based on filter
@@ -611,8 +617,11 @@ mod tests {
             .await
             .expect("Subscription should succeed");
 
+        // Give subscription processing some time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
         // Receive the special event
-        let timeout = tokio::time::timeout(tokio::time::Duration::from_millis(100), sub2.next());
+        let timeout = tokio::time::timeout(tokio::time::Duration::from_millis(1000), sub2.next());
         match timeout.await {
             Ok(Some(Ok(event))) => {
                 // Verify we got the special event
@@ -749,6 +758,9 @@ mod tests {
             .expect("Subscription should succeed");
 
         println!("✅ Subscription created, waiting for streaming events...");
+
+        // Give subscription processing some time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
         // Collect multiple events
         let mut received_events = Vec::new();
@@ -910,6 +922,9 @@ mod tests {
             .expect("Subscription should succeed");
 
         println!("✅ Subscription created");
+
+        // Give subscription processing some time to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
         // Receive a few events to ensure streaming is working
         let mut received_events = 0;

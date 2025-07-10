@@ -122,7 +122,9 @@ pub struct ProcessHub {
 impl ProcessHub {
     /// Create a new ProcessHub
     pub async fn new(name: &str) -> Result<Self> {
+        println!("🏗️  Creating ProcessHub with name: {}", name);
         let transport = IpmbTransport::new(name).await?;
+        println!("🏗️  ProcessHub transport created successfully");
         let shutdown_signal = Arc::new(AtomicBool::new(false));
 
         let hub = Self {
@@ -593,8 +595,11 @@ impl ProcessHub {
 
     /// Send a message through the transport layer
     pub async fn send_message(&self, msg: Message) -> Result<()> {
+        println!("📤 ProcessHub::send_message called! type: {:?} to {:?} id={}", msg.msg_type, msg.target, msg.id);
+        println!("🔍 Transport type: {:?}", std::any::type_name_of_val(self.transport.as_ref()));
         tracing::info!("📤 ProcessHub sending message type: {:?} to {:?} id={}", msg.msg_type, msg.target, msg.id);
         let result = self.transport.send(msg).await;
+        println!("📤 ProcessHub::send_message result: {:?}", result);
         tracing::info!("📤 Message send result: {:?}", result);
         result
     }

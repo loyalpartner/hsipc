@@ -123,6 +123,7 @@ pub struct IpmbTransport {
 impl IpmbTransport {
     /// Create a new transport
     pub async fn new(process_name: &str) -> Result<Self> {
+        println!("🚌 Creating IpmbTransport for process: {}", process_name);
         // Get isolated message bus for this test process
         let message_bus = get_message_bus().await;
         // Register with the isolated message bus
@@ -139,10 +140,18 @@ impl IpmbTransport {
             loop {
                 match bus_receiver.recv().await {
                     Ok(msg) => {
+                        tracing::info!("🔍 Message filter task received message type: {:?} id: {} for process: {}", msg.msg_type, msg.id, process_name_clone);
+                        
                         // Filter messages for this process
                         let should_receive = match &msg.target {
-                            Some(target) => target == &process_name_clone,
-                            None => true, // Broadcast messages
+                            Some(target) => {
+                                tracing::debug!("🎯 Targeted message: target={}, current_process={}, match={}", target, process_name_clone, target == &process_name_clone);
+                                target == &process_name_clone
+                            },
+                            None => {
+                                tracing::debug!("📢 Broadcast message received by process: {}", process_name_clone);
+                                true // Broadcast messages
+                            }
                         };
 
                         if should_receive {
@@ -151,6 +160,8 @@ impl IpmbTransport {
                                 tracing::error!("📪 Local receiver channel closed for process: {}", process_name_clone);
                                 break; // Receiver dropped
                             }
+                        } else {
+                            tracing::debug!("🚫 Message filtered out for process: {}", process_name_clone);
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
@@ -181,9 +192,12 @@ impl IpmbTransport {
 #[async_trait]
 impl Transport for IpmbTransport {
     async fn send(&self, msg: Message) -> Result<()> {
+        println!("🚌 IpmbTransport::send called! type: {:?} from {} id={}", msg.msg_type, msg.source, msg.id);
         tracing::debug!("🚌 Transport sending message type: {:?} from {}", msg.msg_type, msg.source);
         let message_bus = get_message_bus().await;
-        message_bus.send_message(msg).await
+        let result = message_bus.send_message(msg).await;
+        println!("🚌 IpmbTransport::send result: {:?}", result);
+        result
     }
 
     async fn recv(&self) -> Result<Message> {

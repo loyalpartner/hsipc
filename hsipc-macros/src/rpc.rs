@@ -391,7 +391,13 @@ fn generate_subscription_client_method(
                 let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
-                self.hub.send_message(request_msg).await?;
+                println!("🚀 About to send subscription request to hub...");
+                let send_result = self.hub.send_message(request_msg).await;
+                match &send_result {
+                    Ok(()) => println!("✅ Subscription request sent successfully"),
+                    Err(e) => println!("❌ Failed to send subscription request: {}", e),
+                }
+                send_result?;
 
                 Ok(subscription)
             }
@@ -420,7 +426,13 @@ fn generate_subscription_client_method(
                 let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
-                self.hub.send_message(request_msg).await?;
+                println!("🚀 About to send subscription request to hub...");
+                let send_result = self.hub.send_message(request_msg).await;
+                match &send_result {
+                    Ok(()) => println!("✅ Subscription request sent successfully"),
+                    Err(e) => println!("❌ Failed to send subscription request: {}", e),
+                }
+                send_result?;
 
                 Ok(subscription)
             }
@@ -460,7 +472,13 @@ fn generate_subscription_client_method(
                 let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
-                self.hub.send_message(request_msg).await?;
+                println!("🚀 About to send subscription request to hub...");
+                let send_result = self.hub.send_message(request_msg).await;
+                match &send_result {
+                    Ok(()) => println!("✅ Subscription request sent successfully"),
+                    Err(e) => println!("❌ Failed to send subscription request: {}", e),
+                }
+                send_result?;
 
                 Ok(subscription)
             }

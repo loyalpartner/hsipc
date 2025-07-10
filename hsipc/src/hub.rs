@@ -14,8 +14,8 @@ use crate::{
     Error, Message, Result,
 };
 
-#[cfg(test)]
-use crate::transport::IpmbTransport;
+// Use real IPMB transport for all environments
+use crate::transport_ipmb::IpmbTransport;
 
 // Simple Service trait for RPC system
 #[async_trait::async_trait]
@@ -93,8 +93,6 @@ impl ServiceRegistry {
     }
 }
 
-#[cfg(not(test))]
-use crate::transport_ipmb::IpmbTransport;
 
 /// Main process hub for IPC communication
 #[derive(Clone)]

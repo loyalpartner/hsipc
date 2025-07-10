@@ -224,7 +224,7 @@ impl Message {
         let subscription_msg = crate::subscription::SubscriptionMessage::Request {
             id: Uuid::new_v4(),
             method: method.clone(),
-            params: serde_json::from_slice(&params).unwrap_or(serde_json::Value::Null),
+            params: params.clone(),
         };
         let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
 
@@ -291,9 +291,10 @@ impl Message {
         subscription_id: Uuid,
         data: serde_json::Value,
     ) -> Self {
+        let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
         let subscription_msg = crate::subscription::SubscriptionMessage::Data {
             id: subscription_id,
-            data,
+            data: data_bytes,
         };
         let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
 

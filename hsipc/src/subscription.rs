@@ -204,14 +204,14 @@ pub enum SubscriptionMessage {
     Request {
         id: Uuid,
         method: String,
-        params: serde_json::Value,
+        params: Vec<u8>,
     },
     /// Subscription was accepted by the server
     Accept { id: Uuid },
     /// Subscription was rejected by the server
     Reject { id: Uuid, reason: String },
     /// Data sent from server to client
-    Data { id: Uuid, data: serde_json::Value },
+    Data { id: Uuid, data: Vec<u8> },
     /// Subscription was canceled
     Cancel { id: Uuid },
 }

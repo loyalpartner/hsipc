@@ -43,16 +43,55 @@ Master Merge
 
 ### 分层测试策略
 
-| 阶段 | TDD Phase | Git Action | 时间 | 命令 |
-|------|-----------|------------|------|------|
-| 语法检查 | - | Working Dir | 2秒 | `cargo check` |
-| Red Phase | 🔴 编写失败测试 | Working Dir | 5秒 | `make tdd-red` |
-| Green Phase | 🟢 最小实现 | Working Dir | 10秒 | `make tdd-green` |
-| Refactor | ♻️ 重构优化 | Working Dir | 30秒 | `make tdd-refactor` |
-| Commit | ✅ 提交绿色状态 | Staging/Commit | 5秒 | `make tdd-commit` |
-| Integration | 🔗 集成测试 | Branch | 2分钟 | `make integration` |
+| 阶段 | TDD Phase | Git Action | 时间 | Claude命令 | Make命令 |
+|------|-----------|------------|------|----------|----------|
+| 智能循环 | 🤖 自动检测 | Working Dir | 5秒 | `/tdd` | `make tdd-full` |
+| 语法检查 | - | Working Dir | 2秒 | `/check` | `cargo check` |
+| Red Phase | 🔴 编写失败测试 | Working Dir | 5秒 | `/tdd-red` | `make tdd-red` |
+| Green Phase | 🟢 最小实现 | Working Dir | 10秒 | `/tdd-green` | `make tdd-green` |
+| Refactor | ♻️ 重构优化 | Working Dir | 30秒 | `/tdd-refactor` | `make tdd-refactor` |
+| Commit | ✅ 提交绿色状态 | Staging/Commit | 5秒 | `/commit` | `make tdd-commit` |
+| 状态检查 | 📊 分析状态 | Working Dir | 3秒 | `/tdd-status` | `make status-check` |
 
 ## 🚀 实际工作流程
+
+### 0. Claude斜杠命令工作流（推荐）
+
+#### 智能TDD开发流程
+
+```bash
+# 开始开发新功能
+1. 检查当前状态
+   /tdd-status
+
+2. 智能TDD循环（自动检测状态并执行）
+   /tdd
+   
+   # Claude会分析当前状态：
+   # - 🔴 Red: 引导编写失败测试
+   # - 🟢 Green: 引导实现最小代码
+   # - ♻️ Refactor: 自动运行代码质量检查
+   # - 📝 Commit: 建议提交绿色状态
+
+3. 重复TDD循环直到功能完成
+   /tdd -> /tdd -> /tdd ...
+
+4. 代码质量检查
+   /check
+
+5. 创建提交
+   /commit
+
+6. 继续下一个功能或创建PR
+```
+
+#### Claude斜杠命令优势
+
+- **智能判断**: 自动检测当前TDD阶段，无需人工判断
+- **错误恢复**: 自动处理常见开发问题
+- **进度跟踪**: 自动更新TodoWrite任务状态
+- **质量保证**: 自动运行代码质量检查
+- **一致性**: 确保遵循TDD最佳实践
 
 ### 1. 功能开发的完整流程
 
@@ -67,6 +106,20 @@ git checkout -b feature/subscription-data-flow
 
 #### 步骤2: TDD 红绿重构循环
 
+**推荐方式 - Claude斜杠命令：**
+```bash
+# 智能TDD循环（推荐）
+/tdd
+# Claude会自动检测当前状态并执行合适的TDD阶段
+
+# 或者使用专用命令：
+/tdd-red      # 强制进入红色阶段：编写失败测试
+/tdd-green    # 强制进入绿色阶段：最小实现
+/tdd-refactor # 强制进入重构阶段：优化代码
+/tdd-status   # 检查当前TDD状态和进度
+```
+
+**传统方式 - Make命令：**
 ```bash
 # Red Phase: 编写失败测试
 make tdd-red
@@ -91,6 +144,17 @@ make tdd-refactor
 ```
 
 #### 步骤3: Git 提交绿色状态
+
+**推荐方式 - Claude斜杠命令：**
+```bash
+# 智能代码质量检查
+/check
+
+# 创建Git提交（自动生成提交信息）
+/commit
+```
+
+**传统方式 - Make命令：**
 ```bash
 # 提交当前绿色状态
 make tdd-commit

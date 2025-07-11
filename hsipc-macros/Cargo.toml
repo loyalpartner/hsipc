@@ -30,3 +30,4 @@ tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 bincode = { workspace = true }
+tracing-subscriber = "0.3"

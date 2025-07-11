@@ -378,8 +378,7 @@ fn generate_subscription_client_method(
 
                 // Get the subscription ID from the message
                 let subscription_id = request_msg.correlation_id.unwrap();
-                
-                println!("📡 Sending subscription request: method={}, id={}", #rpc_method_name, subscription_id);
+
 
                 // Create channel for receiving subscription data
                 let (tx, rx) = hsipc::tokio::sync::mpsc::unbounded_channel();
@@ -391,13 +390,7 @@ fn generate_subscription_client_method(
                 let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
-                println!("🚀 About to send subscription request to hub...");
-                let send_result = self.hub.send_message(request_msg).await;
-                match &send_result {
-                    Ok(()) => println!("✅ Subscription request sent successfully"),
-                    Err(e) => println!("❌ Failed to send subscription request: {}", e),
-                }
-                send_result?;
+                self.hub.send_message(request_msg).await?;
 
                 Ok(subscription)
             }
@@ -426,13 +419,7 @@ fn generate_subscription_client_method(
                 let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
-                println!("🚀 About to send subscription request to hub...");
-                let send_result = self.hub.send_message(request_msg).await;
-                match &send_result {
-                    Ok(()) => println!("✅ Subscription request sent successfully"),
-                    Err(e) => println!("❌ Failed to send subscription request: {}", e),
-                }
-                send_result?;
+                self.hub.send_message(request_msg).await?;
 
                 Ok(subscription)
             }
@@ -459,8 +446,7 @@ fn generate_subscription_client_method(
 
                 // Get the subscription ID from the message
                 let subscription_id = request_msg.correlation_id.unwrap();
-                
-                println!("📡 Sending subscription request: method={}, id={}", #rpc_method_name, subscription_id);
+
 
                 // Create channel for receiving subscription data
                 let (tx, rx) = hsipc::tokio::sync::mpsc::unbounded_channel();
@@ -472,13 +458,7 @@ fn generate_subscription_client_method(
                 let subscription = hsipc::RpcSubscription::new_with_hub(subscription_id, rx, self.hub.clone());
 
                 // Actually send the subscription request
-                println!("🚀 About to send subscription request to hub...");
-                let send_result = self.hub.send_message(request_msg).await;
-                match &send_result {
-                    Ok(()) => println!("✅ Subscription request sent successfully"),
-                    Err(e) => println!("❌ Failed to send subscription request: {}", e),
-                }
-                send_result?;
+                self.hub.send_message(request_msg).await?;
 
                 Ok(subscription)
             }
@@ -539,9 +519,13 @@ pub fn rpc_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 MethodType::Subscription => {
                     // For subscription methods, we need special handling
                     // These are handled through the subscription protocol, not regular RPC
-                    let sub_handler = generate_subscription_method_handler(method_name, &rpc_method_name, &params);
+                    let sub_handler = generate_subscription_method_handler(
+                        method_name,
+                        &rpc_method_name,
+                        &params,
+                    );
                     subscription_handlers.push(sub_handler);
-                    
+
                     // Still generate the regular handler to reject RPC calls to subscription methods
                     generate_subscription_handler(method_name, &rpc_method_name)
                 }
@@ -623,7 +607,7 @@ pub fn rpc_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                     _ => Err(hsipc::Error::method_not_found(self.name(), method))
                 }
             }
-            
+
             async fn handle_subscription(
                 &self,
                 method: &str,

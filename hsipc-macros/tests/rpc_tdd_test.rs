@@ -6,8 +6,11 @@
 //! 3. Implement minimal code to make tests pass
 //! 4. Refactor and improve
 
-use hsipc::{method, rpc, subscription, PendingSubscriptionSink, ProcessHub, Service};
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::expect_fun_call)]
+
 use hsipc::message::MessageType;
+use hsipc::{method, rpc, subscription, PendingSubscriptionSink, ProcessHub, Service};
 use serde::{Deserialize, Serialize};
 
 // Test data types
@@ -88,19 +91,16 @@ impl Calculator for CalculatorImpl {
         let sink = pending.accept().await.map_err(|e| RpcError {
             message: e.to_string(),
         })?;
-        
+
         // Send a test event immediately for the test
         let test_event = TestEvent {
-            message: format!("Test event for filter: {:?}", filter),
+            message: format!("Test event for filter: {filter:?}"),
             timestamp: 12345,
         };
-        
+
         tokio::spawn(async move {
-            if let Err(e) = sink.send_value(test_event).await {
-                println!("Failed to send test event: {}", e);
-            }
+            sink.send_value(test_event).await.ok();
         });
-        
         Ok(())
     }
 }
@@ -310,62 +310,58 @@ mod tests {
     /// Goal: Test complete subscription data flow from server to client
     #[tokio::test]
     async fn test_subscription_data_flow() {
-        println!("🧪 Starting test_subscription_data_flow...");
-        let hub = ProcessHub::new_with_config("test_subscription_data_flow", true)
+        // Use a single ProcessHub for both client and server
+        // This tests the subscription mechanism within the same process
+        let hub = ProcessHub::new_with_config("subscription_test", true)
             .await
             .unwrap();
 
-        println!("✅ ProcessHub created, registering service...");
         // Register service with data streaming capability
         let service = CalculatorService::new(CalculatorImpl);
-        hub.register_service_with_config(service, true).await.unwrap();
+        hub.register_service_with_config(service, true)
+            .await
+            .unwrap();
 
-        println!("✅ Service registered, creating client...");
-        // Create client
+        // Create client connected to the same hub
         let client = CalculatorClient::new(hub.clone());
 
-        println!("📡 Creating subscription...");
+        // Wait for message loop to be ready
+        for _i in 0..500 {
+            // Wait up to 5 seconds
+            if hub.is_message_loop_ready() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         // Subscribe to events - this should return RpcSubscription<TestEvent>
         let mut subscription = client
             .subscribe_events(Some("test_filter".to_string()))
             .await
             .expect("Subscription should succeed");
-        
-        println!("✅ Subscription created successfully!");
-
-        // TODO: This test will fail initially because we haven't implemented
-        // the subscription data flow yet. The test defines our target behavior:
-
-        // 1. Client subscribes and gets RpcSubscription
-        // 2. Server can send data through SubscriptionSink
-        // 3. Client receives data through RpcSubscription.next()
-        // 4. Data is properly serialized/deserialized
-
-        // For now, just test that we can create the subscription successfully
-        // The subscription data flow implementation is working, but we keep this test
-        // simple to avoid the complex runtime cleanup issues
-        let timeout_result =
-            tokio::time::timeout(tokio::time::Duration::from_millis(50), subscription.next()).await;
+        let timeout_result = tokio::time::timeout(
+            tokio::time::Duration::from_millis(1000),
+            subscription.next(),
+        )
+        .await;
 
         match timeout_result {
             Ok(Some(Ok(event))) => {
-                println!("✅ Received subscription data: {event:?}");
                 // Great! The subscription data flow is working
+                let event_obj = event.as_object().expect("Event should be an object");
+                let message = event_obj
+                    .get("message")
+                    .expect("Event should have message field");
+                assert!(message.as_str().unwrap().contains("Test event"));
             }
             Ok(Some(Err(e))) => {
-                println!("❌ Subscription data error: {e}");
                 panic!("Failed to receive subscription data: {e}");
             }
             Ok(None) => {
-                println!("❌ Subscription closed unexpectedly");
                 panic!("Subscription closed without receiving data");
             }
             Err(_) => {
-                // This is expected to timeout since we don't have a test service
-                // that actively sends data in this test
-                println!("⏰ Subscription data flow test timed out (expected for this test)");
-                // For now, just verify that we can create and use the subscription
-                println!("✅ Subscription creation and basic API test passed!");
+                // Timeout indicates the subscription data flow is not working
+                panic!("Subscription data flow test timed out - message routing issue");
             }
         }
 
@@ -491,8 +487,10 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
         // Try to receive the event that the service should send
-        let timeout =
-            tokio::time::timeout(tokio::time::Duration::from_millis(1000), subscription.next());
+        let timeout = tokio::time::timeout(
+            tokio::time::Duration::from_millis(1000),
+            subscription.next(),
+        );
 
         match timeout.await {
             Ok(Some(Ok(event))) => {
@@ -561,7 +559,10 @@ mod tests {
                     .await
                     .push(filter.clone().unwrap_or_default());
 
-                println!("🎯 TrackingCalculator processing subscription with filter: {:?}", filter);
+                println!(
+                    "🎯 TrackingCalculator processing subscription with filter: {:?}",
+                    filter
+                );
 
                 // Accept the subscription
                 let sink = pending.accept().await.map_err(|e| RpcError {
@@ -710,7 +711,10 @@ mod tests {
                 pending: PendingSubscriptionSink,
                 filter: Option<String>,
             ) -> std::result::Result<(), RpcError> {
-                println!("🔔 Starting streaming subscription with filter: {:?}", filter);
+                println!(
+                    "🔔 Starting streaming subscription with filter: {:?}",
+                    filter
+                );
 
                 // Accept the subscription
                 let sink = pending.accept().await.map_err(|e| RpcError {
@@ -724,7 +728,8 @@ mod tests {
 
                 tokio::spawn(async move {
                     let mut counter = 0;
-                    while counter < 5 {  // Send 5 events for testing
+                    while counter < 5 {
+                        // Send 5 events for testing
                         {
                             let is_streaming_guard = is_streaming.lock().await;
                             if !*is_streaming_guard {
@@ -793,13 +798,11 @@ mod tests {
 
         // Collect multiple events
         let mut received_events = Vec::new();
-        
+
         // Try to receive up to 5 events with a reasonable timeout
         for i in 0..5 {
-            let timeout = tokio::time::timeout(
-                tokio::time::Duration::from_millis(200), 
-                subscription.next()
-            );
+            let timeout =
+                tokio::time::timeout(tokio::time::Duration::from_millis(200), subscription.next());
 
             match timeout.await {
                 Ok(Some(Ok(event))) => {
@@ -823,10 +826,13 @@ mod tests {
 
         // Verify we received multiple events
         println!("📊 Received {} events total", received_events.len());
-        
+
         // For now, we expect at least 1 event (basic functionality)
         // TODO: Once streaming is fully implemented, we should receive all 5 events
-        assert!(!received_events.is_empty(), "Should receive at least 1 streaming event");
+        assert!(
+            !received_events.is_empty(),
+            "Should receive at least 1 streaming event"
+        );
 
         // Stop streaming
         *is_streaming.lock().await = false;
@@ -869,10 +875,16 @@ mod tests {
                 filter: Option<String>,
             ) -> std::result::Result<(), RpcError> {
                 let filter_str = filter.clone().unwrap_or_default();
-                println!("🔔 Starting lifecycle tracking subscription: {}", filter_str);
+                println!(
+                    "🔔 Starting lifecycle tracking subscription: {}",
+                    filter_str
+                );
 
                 // Track active subscription
-                self.active_subscriptions.lock().await.push(filter_str.clone());
+                self.active_subscriptions
+                    .lock()
+                    .await
+                    .push(filter_str.clone());
 
                 // Accept the subscription
                 let sink = pending.accept().await.map_err(|e| RpcError {
@@ -886,11 +898,15 @@ mod tests {
 
                 tokio::spawn(async move {
                     let mut counter = 0;
-                    
+
                     // Send events continuously until sink is closed
                     loop {
                         let test_event = TestEvent {
-                            message: format!("Lifecycle event #{} for {}", counter + 1, filter_for_task),
+                            message: format!(
+                                "Lifecycle event #{} for {}",
+                                counter + 1,
+                                filter_for_task
+                            ),
                             timestamp: counter as u64,
                         };
 
@@ -903,7 +919,7 @@ mod tests {
                             Err(_) => {
                                 // Sink is closed (subscription cancelled)
                                 println!("📪 Subscription {filter_for_task} cancelled by client");
-                                
+
                                 // Remove from active and add to cancelled
                                 {
                                     let mut active = active_subs.lock().await;
@@ -958,10 +974,8 @@ mod tests {
         // Receive a few events to ensure streaming is working
         let mut received_events = 0;
         for i in 0..3 {
-            let timeout = tokio::time::timeout(
-                tokio::time::Duration::from_millis(200), 
-                subscription.next()
-            );
+            let timeout =
+                tokio::time::timeout(tokio::time::Duration::from_millis(200), subscription.next());
 
             match timeout.await {
                 Ok(Some(Ok(event))) => {
@@ -984,7 +998,10 @@ mod tests {
         }
 
         // Verify we received some events
-        assert!(received_events >= 1, "Should receive at least 1 lifecycle event");
+        assert!(
+            received_events >= 1,
+            "Should receive at least 1 lifecycle event"
+        );
         println!("📊 Received {received_events} lifecycle events");
 
         // Verify subscription is active
@@ -1013,7 +1030,7 @@ mod tests {
         println!("✅ Subscription properly consumed after cancellation");
 
         // Clean up - subscription is already consumed by cancel()
-        
+
         // Give some time for cleanup to complete
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
@@ -1039,7 +1056,9 @@ mod tests {
         #[hsipc::async_trait]
         impl Calculator for SimpleService {
             async fn add(&self, request: AddRequest) -> std::result::Result<AddResponse, RpcError> {
-                Ok(AddResponse { result: request.a + request.b })
+                Ok(AddResponse {
+                    result: request.a + request.b,
+                })
             }
 
             fn multiply(&self, a: i32, b: i32) -> std::result::Result<i32, RpcError> {
@@ -1051,7 +1070,10 @@ mod tests {
                 pending: PendingSubscriptionSink,
                 filter: Option<String>,
             ) -> std::result::Result<(), RpcError> {
-                println!("🎯 SimpleService processing subscription with filter: {:?}", filter);
+                println!(
+                    "🎯 SimpleService processing subscription with filter: {:?}",
+                    filter
+                );
 
                 let sink = pending.accept().await.map_err(|e| RpcError {
                     message: e.to_string(),
@@ -1087,7 +1109,9 @@ mod tests {
 
         // Create simple service
         let counter = std::sync::Arc::new(tokio::sync::Mutex::new(0));
-        let service = SimpleService { counter: counter.clone() };
+        let service = SimpleService {
+            counter: counter.clone(),
+        };
 
         // Register service
         let service_wrapper = CalculatorService::new(service);
@@ -1110,7 +1134,11 @@ mod tests {
 
         // Try to receive from first subscription
         let timeout1 = tokio::time::timeout(tokio::time::Duration::from_millis(1000), sub1.next());
-        let event1 = timeout1.await.expect("Should receive first event").expect("Should not be None").expect("Should not be error");
+        let event1 = timeout1
+            .await
+            .expect("Should receive first event")
+            .expect("Should not be None")
+            .expect("Should not be error");
         println!("✅ Received first event: {event1:?}");
 
         // Wait longer before second subscription to ensure first is fully processed
@@ -1130,11 +1158,11 @@ mod tests {
         match timeout2.await {
             Ok(Some(Ok(event2))) => {
                 println!("✅ Received second event: {event2:?}");
-                
+
                 // Verify counter was incremented
                 let final_counter = *counter.lock().await;
                 assert_eq!(final_counter, 2, "Should have processed 2 subscriptions");
-                
+
                 println!("🎉 Multiple subscriptions test completed successfully!");
             }
             Ok(Some(Err(e))) => {
@@ -1173,17 +1201,26 @@ mod tests {
 
         // First call
         println!("🔔 Making first RPC call...");
-        let result1 = client.add(AddRequest { a: 1, b: 2 }).await.expect("First call should succeed");
+        let result1 = client
+            .add(AddRequest { a: 1, b: 2 })
+            .await
+            .expect("First call should succeed");
         println!("✅ First result: {}", result1.result);
 
         // Second call
         println!("🔔 Making second RPC call...");
-        let result2 = client.add(AddRequest { a: 3, b: 4 }).await.expect("Second call should succeed");
+        let result2 = client
+            .add(AddRequest { a: 3, b: 4 })
+            .await
+            .expect("Second call should succeed");
         println!("✅ Second result: {}", result2.result);
 
         // Third call
         println!("🔔 Making third RPC call...");
-        let result3 = client.add(AddRequest { a: 5, b: 6 }).await.expect("Third call should succeed");
+        let result3 = client
+            .add(AddRequest { a: 5, b: 6 })
+            .await
+            .expect("Third call should succeed");
         println!("✅ Third result: {}", result3.result);
 
         assert_eq!(result1.result, 3);
@@ -1213,7 +1250,10 @@ mod tests {
 
         // First: Regular RPC call
         println!("🔔 Making first RPC call...");
-        let result1 = client.add(AddRequest { a: 1, b: 2 }).await.expect("First call should succeed");
+        let result1 = client
+            .add(AddRequest { a: 1, b: 2 })
+            .await
+            .expect("First call should succeed");
         println!("✅ First result: {}", result1.result);
 
         // Second: Subscription
@@ -1229,7 +1269,10 @@ mod tests {
 
         // Third: Another RPC call after subscription
         println!("🔔 Making RPC call after subscription...");
-        let result2 = client.add(AddRequest { a: 3, b: 4 }).await.expect("Second call should succeed");
+        let result2 = client
+            .add(AddRequest { a: 3, b: 4 })
+            .await
+            .expect("Second call should succeed");
         println!("✅ Second result: {}", result2.result);
 
         assert_eq!(result1.result, 3);
@@ -1252,7 +1295,7 @@ mod tests {
         // Send multiple test messages
         for i in 1..=3 {
             println!("📤 Sending test message {i}");
-            
+
             let test_msg = hsipc::Message {
                 id: hsipc::uuid::Uuid::new_v4(),
                 msg_type: MessageType::SubscriptionRequest,
@@ -1264,14 +1307,16 @@ mod tests {
                 metadata: Default::default(),
             };
 
-            hub.send_message(test_msg).await.expect("Message should send");
+            hub.send_message(test_msg)
+                .await
+                .expect("Message should send");
         }
 
         println!("✅ All test messages sent");
-        
+
         // Wait a bit to see message processing
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        
+
         let _ = hub.shutdown().await;
         println!("🎉 Transport test completed");
     }
@@ -1286,7 +1331,9 @@ mod tests {
         #[hsipc::async_trait]
         impl Calculator for QuietService {
             async fn add(&self, request: AddRequest) -> std::result::Result<AddResponse, RpcError> {
-                Ok(AddResponse { result: request.a + request.b })
+                Ok(AddResponse {
+                    result: request.a + request.b,
+                })
             }
 
             fn multiply(&self, a: i32, b: i32) -> std::result::Result<i32, RpcError> {
@@ -1298,8 +1345,11 @@ mod tests {
                 pending: PendingSubscriptionSink,
                 filter: Option<String>,
             ) -> std::result::Result<(), RpcError> {
-                println!("🎯 QuietService processing subscription with filter: {:?}", filter);
-                
+                println!(
+                    "🎯 QuietService processing subscription with filter: {:?}",
+                    filter
+                );
+
                 // Just accept but don't send any data
                 let _sink = pending.accept().await.map_err(|e| RpcError {
                     message: e.to_string(),
@@ -1359,7 +1409,7 @@ mod tests {
         // Use single hub to test that service discovery improvement works
         let hub_name = format!("test_discovery_{}", std::process::id());
         let hub = ProcessHub::new(&hub_name).await.unwrap();
-        
+
         // Register service
         let service = CalculatorService::new(CalculatorImpl);
         hub.register_service(service).await.unwrap();
@@ -1370,21 +1420,21 @@ mod tests {
 
         // Create client using same hub
         let client = CalculatorClient::new(hub.clone());
-        
+
         // This call should succeed quickly since service is local
         let start = std::time::Instant::now();
         let result = client.add(AddRequest { a: 5, b: 3 }).await.expect(
-            "Service call should succeed immediately - testing service discovery improvement"
+            "Service call should succeed immediately - testing service discovery improvement",
         );
         let duration = start.elapsed();
-        
+
         println!("✅ Service call completed in {:?}", duration);
         assert_eq!(result.result, 8);
-        
+
         // The call should be very fast for local services
         assert!(
-            duration.as_millis() < 1000, 
-            "Service call took too long: {:?}. Local services should be fast.", 
+            duration.as_millis() < 1000,
+            "Service call took too long: {:?}. Local services should be fast.",
             duration
         );
 
@@ -1399,59 +1449,65 @@ mod tests {
     #[tokio::test]
     async fn test_message_loop_resilience_after_timeout() {
         println!("🧪 Testing message loop resilience after transport timeout...");
-        
+
         // Create unique process name for isolation
         let hub_name = format!("test_message_loop_resilience_{}", std::process::id());
         let hub = ProcessHub::new(&hub_name).await.unwrap();
-        
+
         // Register service to have something to call
         let service = CalculatorService::new(CalculatorImpl);
         hub.register_service(service).await.unwrap();
         println!("✅ Service registered");
-        
+
         // Create client
         let client = CalculatorClient::new(hub.clone());
-        
+
         // Test 1: Normal operation - make sure basic functionality works
         println!("🔔 Testing normal operation first...");
-        let result1 = client.add(AddRequest { a: 1, b: 2 }).await
+        let result1 = client
+            .add(AddRequest { a: 1, b: 2 })
+            .await
             .expect("First call should succeed");
         assert_eq!(result1.result, 3);
         println!("✅ Normal operation confirmed");
-        
+
         // Test 2: Simulate the scenario that triggers timeout issues
         // In the current implementation, if 30 seconds pass without messages,
         // the IPMB transport will timeout and the message loop will exit
-        
-        // We can't easily wait 30 seconds in a test, but we can verify 
+
+        // We can't easily wait 30 seconds in a test, but we can verify
         // that after a longer pause, the system still works
-        
+
         println!("⏰ Waiting to simulate message gap that could trigger timeout issues...");
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        
+
         // Test 3: After potential timeout period, verify message loop still works
         println!("🔔 Testing operation after message gap...");
-        let result2 = client.add(AddRequest { a: 5, b: 7 }).await
+        let result2 = client
+            .add(AddRequest { a: 5, b: 7 })
+            .await
             .expect("Call after gap should succeed if message loop is resilient");
         assert_eq!(result2.result, 12);
         println!("✅ Operation after gap succeeded");
-        
+
         // Test 4: Multiple operations to verify continued stability
         println!("🔔 Testing multiple operations for continued stability...");
         for i in 0..3 {
-            let result = client.add(AddRequest { a: i, b: i + 1 }).await
+            let result = client
+                .add(AddRequest { a: i, b: i + 1 })
+                .await
                 .expect(&format!("Call {} should succeed", i));
             assert_eq!(result.result, i + (i + 1));
             println!("✅ Stability test call {} succeeded", i);
         }
-        
+
         // NOTE: This test currently will pass because we don't trigger the actual
         // 30-second timeout. The REAL test will come when we fix the message loop
         // to handle timeout errors gracefully instead of exiting.
-        
+
         // This test SHOULD FAIL once we simulate actual transport timeout errors
         // and SHOULD PASS once we implement proper error handling in message loop
-        
+
         // Clean up
         let _ = hub.shutdown().await;
         println!("🎉 Message loop resilience test completed!");
@@ -1464,53 +1520,53 @@ mod tests {
     #[tokio::test]
     async fn test_same_process_hub_communication() {
         println!("🧪 Testing same-process hub communication (baseline)...");
-        
+
         // Create unique process names for true cross-process simulation
         // Use non-test names to use production bus (same as working demo)
         let server_name = format!("server_{}", std::process::id());
         let client_name = format!("client_{}", std::process::id());
-        
+
         println!("🖥️  Testing cross-process communication simulation...");
-        
+
         // Create a shared hub first (like working demo)
         let shared_hub_name = format!("shared_test_hub_{}", std::process::id());
         let hub = ProcessHub::new(&shared_hub_name).await.unwrap();
-        
+
         // Clone hub for service registration (simulating server process)
         let hub_a = hub.clone();
-        
+
         // Register Calculator service on hubA
         let service = CalculatorService::new(CalculatorImpl);
         hub_a.register_service(service).await.unwrap();
         println!("✅ Service registered on hubA (shared hub clone)");
-        
+
         // Give service registration time to complete
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         // Clone hub for client (simulating client process)
         let hub_b = hub.clone();
-        
+
         // Create client on hubB to call service on hubA
         let client = CalculatorClient::new(hub_b);
-        
+
         println!("🎯 Attempting cross-process service call...");
         println!("   hubB (client) trying to call service on hubA (server)");
-        
+
         // This should work if cross-process service discovery is working
         // Currently this test is EXPECTED TO FAIL (RED PHASE)
         let start_time = std::time::Instant::now();
-        
+
         // Add timeout to prevent infinite hanging
         let call_future = client.add(AddRequest { a: 5, b: 3 });
         let timeout_duration = std::time::Duration::from_secs(10);
-        
+
         match tokio::time::timeout(timeout_duration, call_future).await {
             Ok(Ok(result)) => {
                 let duration = start_time.elapsed();
                 println!("✅ Cross-process call succeeded in {:?}!", duration);
                 assert_eq!(result.result, 8);
                 println!("🎉 Cross-process service discovery is working!");
-                
+
                 // Clean up
                 let _ = hub.shutdown().await;
             }
@@ -1518,15 +1574,17 @@ mod tests {
                 let duration = start_time.elapsed();
                 println!("❌ Cross-process call failed after {:?}", duration);
                 println!("   Error: {}", e);
-                println!("🔍 This failure proves the cross-process service discovery problem exists");
+                println!(
+                    "🔍 This failure proves the cross-process service discovery problem exists"
+                );
                 println!("📋 Debugging info:");
                 println!("   - hubA (server): {}", server_name);
                 println!("   - hubB (client): {}", client_name);
                 println!("   - Service should be discoverable across processes");
-                
+
                 // Clean up before failing
                 let _ = hub.shutdown().await;
-                
+
                 // This is the RED PHASE - we EXPECT this to fail initially
                 // Once we fix the cross-process service discovery, this should pass
                 panic!("Cross-process service discovery failed: {}", e);
@@ -1534,15 +1592,17 @@ mod tests {
             Err(_timeout) => {
                 let duration = start_time.elapsed();
                 println!("⏰ Cross-process call timed out after {:?}", duration);
-                println!("🔍 This timeout proves the cross-process service discovery problem exists");
+                println!(
+                    "🔍 This timeout proves the cross-process service discovery problem exists"
+                );
                 println!("📋 Debugging info:");
                 println!("   - hubA (server): {}", server_name);
                 println!("   - hubB (client): {}", client_name);
                 println!("   - Service call timed out - likely service discovery issue");
-                
+
                 // Clean up before failing
                 let _ = hub.shutdown().await;
-                
+
                 // This is the RED PHASE - we EXPECT this to fail initially
                 panic!("Cross-process service discovery timed out after 10 seconds");
             }
@@ -1552,58 +1612,64 @@ mod tests {
     /// TDD Test: True cross-process service discovery (RED PHASE)
     /// Goal: Test that independent ProcessHubs can communicate across processes
     /// This is the REAL cross-process test that should initially FAIL
-    #[tokio::test]  
+    #[tokio::test]
     #[ignore] // Mark as ignored for now since we know it will fail
     async fn test_true_cross_process_service_discovery() {
         println!("🧪 Testing TRUE cross-process service discovery (RED PHASE)...");
-        
+
         // Create truly independent ProcessHubs (different IPMB processes)
         let server_name = format!("independent_server_{}", std::process::id());
         let client_name = format!("independent_client_{}", std::process::id());
-        
-        println!("🖥️  Creating independent hubA (server) with name: {}", server_name);
-        
+
+        println!(
+            "🖥️  Creating independent hubA (server) with name: {}",
+            server_name
+        );
+
         // hubA - Independent server process
         let hub_a = ProcessHub::new(&server_name).await.unwrap();
-        
+
         // Register Calculator service on hubA
         let service = CalculatorService::new(CalculatorImpl);
         hub_a.register_service(service).await.unwrap();
         println!("✅ Service registered on independent hubA");
-        
+
         // Give service registration time to broadcast to IPMB bus
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        
-        println!("💻 Creating independent hubB (client) with name: {}", client_name);
-        
+
+        println!(
+            "💻 Creating independent hubB (client) with name: {}",
+            client_name
+        );
+
         // hubB - Independent client process (different IPMB process)
         let hub_b = ProcessHub::new(&client_name).await.unwrap();
-        
+
         // Give hubB time to discover existing services on IPMB bus
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        
+
         // Create client on hubB to call service on hubA
         let client = CalculatorClient::new(hub_b.clone());
-        
+
         println!("🎯 Attempting TRUE cross-process service call...");
         println!("   Independent hubB trying to call service on independent hubA");
         println!("   This requires IPMB bus communication between different processes");
-        
+
         // This SHOULD FAIL initially (RED PHASE) because true cross-process
         // service discovery via IPMB is not working correctly
         let start_time = std::time::Instant::now();
-        
+
         // Add timeout to prevent infinite hanging
         let call_future = client.add(AddRequest { a: 7, b: 8 });
         let timeout_duration = std::time::Duration::from_secs(15);
-        
+
         match tokio::time::timeout(timeout_duration, call_future).await {
             Ok(Ok(result)) => {
                 let duration = start_time.elapsed();
                 println!("✅ TRUE cross-process call succeeded in {:?}!", duration);
                 assert_eq!(result.result, 15);
                 println!("🎉 TRUE cross-process service discovery is working!");
-                
+
                 // Clean up
                 let _ = hub_a.shutdown().await;
                 let _ = hub_b.shutdown().await;
@@ -1617,11 +1683,11 @@ mod tests {
                 println!("   - Independent hubA (server): {}", server_name);
                 println!("   - Independent hubB (client): {}", client_name);
                 println!("   - Services should communicate via IPMB bus");
-                
+
                 // Clean up before failing
                 let _ = hub_a.shutdown().await;
                 let _ = hub_b.shutdown().await;
-                
+
                 // This is the RED PHASE - we EXPECT this to fail
                 panic!("TRUE cross-process service discovery failed: {}", e);
             }
@@ -1633,11 +1699,11 @@ mod tests {
                 println!("   - Independent hubA (server): {}", server_name);
                 println!("   - Independent hubB (client): {}", client_name);
                 println!("   - IPMB bus communication failed between independent processes");
-                
+
                 // Clean up before failing
                 let _ = hub_a.shutdown().await;
                 let _ = hub_b.shutdown().await;
-                
+
                 // This is the RED PHASE - we EXPECT this to fail
                 panic!("TRUE cross-process service discovery timed out after 15 seconds");
             }

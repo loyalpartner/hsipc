@@ -38,8 +38,8 @@ impl PendingSubscriptionSink {
 
     /// Create a new pending subscription sink with transport for messaging
     pub fn new_with_transport(
-        id: Uuid, 
-        method: String, 
+        id: Uuid,
+        method: String,
         sender: mpsc::UnboundedSender<serde_json::Value>,
         transport: std::sync::Arc<dyn crate::transport::Transport>,
         hub_name: String,
@@ -66,14 +66,12 @@ impl PendingSubscriptionSink {
             .ok_or_else(|| Error::runtime_msg("Subscription already accepted or rejected"))?;
 
         // Send accept message to client if we have transport
-        if let (Some(transport), Some(hub_name), Some(client_name)) = 
-            (&self.transport, &self.hub_name, &self.client_name) {
-            let accept_msg = crate::Message::subscription_accept(
-                hub_name.clone(),
-                client_name.clone(),
-                self.id,
-            );
-            
+        if let (Some(transport), Some(hub_name), Some(client_name)) =
+            (&self.transport, &self.hub_name, &self.client_name)
+        {
+            let accept_msg =
+                crate::Message::subscription_accept(hub_name.clone(), client_name.clone(), self.id);
+
             if let Err(e) = transport.send(accept_msg).await {
                 tracing::warn!("Failed to send subscription accept message: {}", e);
                 // Don't fail the accept if we can't send the message
@@ -97,15 +95,16 @@ impl PendingSubscriptionSink {
     /// the PendingSubscriptionSink.
     pub async fn reject(self, reason: String) -> Result<()> {
         // Send reject message to client if we have transport
-        if let (Some(transport), Some(hub_name), Some(client_name)) = 
-            (&self.transport, &self.hub_name, &self.client_name) {
+        if let (Some(transport), Some(hub_name), Some(client_name)) =
+            (&self.transport, &self.hub_name, &self.client_name)
+        {
             let reject_msg = crate::Message::subscription_reject(
                 hub_name.clone(),
                 client_name.clone(),
                 self.id,
                 reason.clone(),
             );
-            
+
             if let Err(e) = transport.send(reject_msg).await {
                 tracing::warn!("Failed to send subscription reject message: {}", e);
                 // Don't fail the reject if we can't send the message
@@ -225,9 +224,9 @@ where
 
     /// Create a new RPC subscription with ProcessHub for cancellation support
     pub fn new_with_hub(
-        id: Uuid, 
-        receiver: mpsc::UnboundedReceiver<serde_json::Value>, 
-        hub: crate::ProcessHub
+        id: Uuid,
+        receiver: mpsc::UnboundedReceiver<serde_json::Value>,
+        hub: crate::ProcessHub,
     ) -> Self {
         Self {
             id,
@@ -276,7 +275,10 @@ where
                 tracing::debug!("Sent subscription cancel message for {}", self.id);
             }
         } else {
-            tracing::debug!("No ProcessHub available for subscription {}, closing locally only", self.id);
+            tracing::debug!(
+                "No ProcessHub available for subscription {}, closing locally only",
+                self.id
+            );
         }
 
         // Closing the receiver will signal the server that we're done

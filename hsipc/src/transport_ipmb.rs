@@ -41,17 +41,17 @@ impl IpmbTransport {
         let (transport, _receiver) = Self::new_with_receiver(process_name).await?;
         Ok(transport)
     }
-    
+
     /// Create a new IPMB transport with separate receiver
     pub async fn new_with_receiver(process_name: &str) -> Result<(Self, IpmbReceiver)> {
         // Create a process-specific bus name for testing to avoid conflicts
         let bus_name = {
             #[cfg(test)]
             {
-                // For tests, use thread ID to isolate tests but allow ProcessHubs
-                // within the same test to communicate on the same bus
-                let thread_id = std::thread::current().id();
-                format!("com.hsipc.test.{thread_id:?}")
+                // For tests, use a unique bus name per test process
+                // but allow multiple instances within the same process
+                let pid = std::process::id();
+                format!("com.hsipc.test.{pid}")
             }
             #[cfg(not(test))]
             {
@@ -96,9 +96,9 @@ impl IpmbTransport {
             sender,
             process_name: process_name.to_string(),
         };
-        
+
         let ipmb_receiver = IpmbReceiver { receiver };
-        
+
         Ok((transport, ipmb_receiver))
     }
 }
@@ -180,7 +180,9 @@ impl Transport for IpmbTransport {
 
     async fn recv(&self) -> Result<Message> {
         // This method is not used anymore, as receiver is separated
-        Err(Error::transport_msg("recv not supported on IpmbTransport, use IpmbReceiver instead"))
+        Err(Error::transport_msg(
+            "recv not supported on IpmbTransport, use IpmbReceiver instead",
+        ))
     }
 
     async fn close(&self) -> Result<()> {

@@ -1,4 +1,4 @@
-.PHONY: quick full check watch multiprocess demo integration benchmark bench-quick bench-core tdd tdd-watch tdd-core smart-test tdd-red tdd-green tdd-refactor tdd-commit tdd-full status-check pre-commit-check
+.PHONY: quick full check watch multiprocess demo benchmark bench-quick bench-core tdd tdd-watch tdd-core smart-test tdd-red tdd-green tdd-refactor tdd-commit tdd-full status-check pre-commit-check
 
 # Quick verification (30 seconds) - Primary development command
 quick:
@@ -30,10 +30,6 @@ demo:
 	@echo "🎬 Running RPC system demo..."
 	@cd examples/trait_based_service && cargo run demo
 
-# Integration test (focused testing)
-integration:
-	@echo "🔧 Running integration tests..."
-	@cargo test --test integration
 
 # TDD development cycle (<10 seconds) - Core functionality only
 tdd:

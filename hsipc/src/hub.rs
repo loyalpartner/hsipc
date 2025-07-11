@@ -15,7 +15,7 @@ use crate::{
 };
 
 // Use real IPMB transport for all environments
-use crate::transport_ipmb::{IpmbTransport, IpmbReceiver};
+use crate::transport_ipmb::{IpmbReceiver, IpmbTransport};
 
 // Simple Service trait for RPC system
 #[async_trait::async_trait]
@@ -33,7 +33,7 @@ pub trait Service: Send + Sync + 'static {
     ) -> Result<()> {
         // Default implementation rejects all subscriptions
         let _ = pending
-            .reject(format!("Subscription method '{}' not supported", method))
+            .reject(format!("Subscription method '{method}' not supported"))
             .await;
         Ok(())
     }
@@ -114,6 +114,8 @@ pub struct ProcessHub {
     shutdown_signal: Arc<AtomicBool>,
     /// Handle to the message processing loop
     message_loop_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
+    /// Flag to indicate message loop is ready to receive messages
+    message_loop_ready: Arc<AtomicBool>,
 }
 
 impl ProcessHub {
@@ -137,14 +139,17 @@ impl ProcessHub {
             active_subscriptions: Arc::new(RwLock::new(std::collections::HashMap::new())),
             shutdown_signal: shutdown_signal.clone(),
             message_loop_handle: Arc::new(RwLock::new(None)),
+            message_loop_ready: Arc::new(AtomicBool::new(false)),
         };
 
         // Start message processing and store the handle
+        tracing::info!("🔧 Starting message loop for ProcessHub: {}", name);
         let handle = hub.start_message_loop(receiver).await;
         {
             let mut handle_guard = hub.message_loop_handle.write().await;
             *handle_guard = Some(handle);
         }
+        tracing::info!("✅ Message loop started for ProcessHub: {}", name);
 
         // Synchronously discover existing services during initialization
         // This ensures clients can immediately find services after hub creation
@@ -200,9 +205,13 @@ impl ProcessHub {
         let active_subscriptions = self.active_subscriptions.clone();
         let hub_name = self.name.clone();
         let shutdown_signal = self.shutdown_signal.clone();
+        let message_loop_ready = self.message_loop_ready.clone();
 
         tokio::spawn(async move {
             tracing::info!("🔄 Starting message processing loop for {}", hub_name);
+
+            // Set ready flag to indicate we can receive messages
+            message_loop_ready.store(true, Ordering::Relaxed);
 
             while !shutdown_signal.load(Ordering::Relaxed) {
                 // Use a timeout to periodically check shutdown signal
@@ -241,6 +250,7 @@ impl ProcessHub {
     }
 
     /// Process incoming messages
+    #[allow(clippy::too_many_arguments)]
     async fn process_message(
         msg: Message,
         service_registry: &Arc<ServiceRegistry>,
@@ -392,16 +402,12 @@ impl ProcessHub {
                 tracing::info!("✅ Subscription accepted from {}", msg.source);
 
                 // Parse the subscription accept message
-                if let Ok(subscription_msg) =
+                if let Ok(crate::subscription::SubscriptionMessage::Accept { id }) =
                     bincode::deserialize::<crate::subscription::SubscriptionMessage>(&msg.payload)
                 {
-                    if let crate::subscription::SubscriptionMessage::Accept { id } =
-                        subscription_msg
-                    {
-                        tracing::info!("✅ Subscription {} accepted", id);
-                        // TODO: Connect this to the client-side RpcSubscription
-                        // For now, this is enough to make the test pass
-                    }
+                    tracing::info!("✅ Subscription {} accepted", id);
+                    // TODO: Connect this to the client-side RpcSubscription
+                    // For now, this is enough to make the test pass
                 }
             }
             MessageType::SubscriptionReject => {
@@ -409,15 +415,11 @@ impl ProcessHub {
                 tracing::info!("❌ Subscription rejected from {}", msg.source);
 
                 // Parse the subscription reject message
-                if let Ok(subscription_msg) =
+                if let Ok(crate::subscription::SubscriptionMessage::Reject { id, reason }) =
                     bincode::deserialize::<crate::subscription::SubscriptionMessage>(&msg.payload)
                 {
-                    if let crate::subscription::SubscriptionMessage::Reject { id, reason } =
-                        subscription_msg
-                    {
-                        tracing::info!("❌ Subscription {} rejected: {}", id, reason);
-                        // TODO: Handle subscription rejection properly
-                    }
+                    tracing::info!("❌ Subscription {} rejected: {}", id, reason);
+                    // TODO: Handle subscription rejection properly
                 }
             }
             MessageType::SubscriptionData => {
@@ -425,31 +427,27 @@ impl ProcessHub {
                 tracing::info!("📊 Received subscription data from {}", msg.source);
 
                 // Parse the subscription data message
-                if let Ok(subscription_msg) =
+                if let Ok(crate::subscription::SubscriptionMessage::Data { id, data }) =
                     bincode::deserialize::<crate::subscription::SubscriptionMessage>(&msg.payload)
                 {
-                    if let crate::subscription::SubscriptionMessage::Data { id, data } =
-                        subscription_msg
-                    {
-                        tracing::info!(
-                            "📊 Subscription {} received data ({} bytes)",
-                            id,
-                            data.len()
-                        );
+                    tracing::info!(
+                        "📊 Subscription {} received data ({} bytes)",
+                        id,
+                        data.len()
+                    );
 
-                        // Deserialize the data back to JSON for the client
-                        if let Ok(json_data) = serde_json::from_slice::<serde_json::Value>(&data) {
-                            // Forward data to the client-side RpcSubscription
-                            let active_subscriptions = active_subscriptions.read().await;
-                            if let Some(sender) = active_subscriptions.get(&id) {
-                                let _ = sender.send(json_data);
-                                tracing::info!("📊 Forwarded data to client subscription {}", id);
-                            } else {
-                                tracing::warn!("📊 No active subscription found for ID {}", id);
-                            }
+                    // Deserialize the data back to JSON for the client
+                    if let Ok(json_data) = serde_json::from_slice::<serde_json::Value>(&data) {
+                        // Forward data to the client-side RpcSubscription
+                        let active_subscriptions = active_subscriptions.read().await;
+                        if let Some(sender) = active_subscriptions.get(&id) {
+                            let _ = sender.send(json_data);
+                            tracing::info!("📊 Forwarded data to client subscription {}", id);
                         } else {
-                            tracing::error!("📊 Failed to deserialize subscription data");
+                            tracing::warn!("📊 No active subscription found for ID {}", id);
                         }
+                    } else {
+                        tracing::error!("📊 Failed to deserialize subscription data");
                     }
                 }
             }
@@ -458,15 +456,11 @@ impl ProcessHub {
                 tracing::info!("🚫 Subscription cancelled from {}", msg.source);
 
                 // Parse the subscription cancel message
-                if let Ok(subscription_msg) =
+                if let Ok(crate::subscription::SubscriptionMessage::Cancel { id }) =
                     bincode::deserialize::<crate::subscription::SubscriptionMessage>(&msg.payload)
                 {
-                    if let crate::subscription::SubscriptionMessage::Cancel { id } =
-                        subscription_msg
-                    {
-                        tracing::info!("🚫 Subscription {} cancelled", id);
-                        // TODO: Clean up subscription properly
-                    }
+                    tracing::info!("🚫 Subscription {} cancelled", id);
+                    // TODO: Clean up subscription properly
                 }
             }
             _ => {}
@@ -481,7 +475,11 @@ impl ProcessHub {
     }
 
     /// Register a service with configuration for fast mode (skip delays)
-    pub async fn register_service_with_config<S: Service>(&self, service: S, fast_mode: bool) -> Result<()> {
+    pub async fn register_service_with_config<S: Service>(
+        &self,
+        service: S,
+        fast_mode: bool,
+    ) -> Result<()> {
         let service_name = service.name().to_string();
         let methods: Vec<String> = service.methods().iter().map(|&s| s.to_string()).collect();
 
@@ -637,6 +635,11 @@ impl ProcessHub {
         &self.name
     }
 
+    /// Check if message loop is ready (for testing)
+    pub fn is_message_loop_ready(&self) -> bool {
+        self.message_loop_ready.load(Ordering::Relaxed)
+    }
+
     /// Send a message through the transport layer
     pub async fn send_message(&self, msg: Message) -> Result<()> {
         tracing::debug!(
@@ -758,8 +761,10 @@ impl ProcessHub {
                             .await
                         {
                             // Extract the subscription method name from the full method
-                            let subscription_method = if method_clone.starts_with("subscription.") {
-                                &method_clone[13..] // Remove "subscription." prefix
+                            let subscription_method = if let Some(stripped) =
+                                method_clone.strip_prefix("subscription.")
+                            {
+                                stripped // Remove "subscription." prefix
                             } else {
                                 &method_clone
                             };
@@ -783,7 +788,7 @@ impl ProcessHub {
                                         hub_name_for_response,
                                         msg_source_for_response,
                                         id,
-                                        format!("Service error: {}", e),
+                                        format!("Service error: {e}"),
                                     );
                                     let _ = transport_for_response.send(reject_msg).await;
                                 }

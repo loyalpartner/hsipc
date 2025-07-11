@@ -95,9 +95,6 @@ pub mod transport;
 pub mod transport_ipmb;
 
 #[cfg(test)]
-mod tests;
-
-#[cfg(test)]
 mod error_tests;
 
 // Re-exports

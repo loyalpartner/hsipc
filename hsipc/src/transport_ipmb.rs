@@ -36,32 +36,24 @@ impl IpmbReceiver {
 }
 
 impl IpmbTransport {
-    /// Create a new IPMB transport
+    /// Create a new IPMB transport with default bus name
     pub async fn new(process_name: &str) -> Result<Self> {
         let (transport, _receiver) = Self::new_with_receiver(process_name).await?;
         Ok(transport)
     }
 
-    /// Create a new IPMB transport with separate receiver
+    /// Create a new IPMB transport with separate receiver using default bus name
     pub async fn new_with_receiver(process_name: &str) -> Result<(Self, IpmbReceiver)> {
-        // Create a process-specific bus name for testing to avoid conflicts
-        let bus_name = {
-            #[cfg(test)]
-            {
-                // For tests, use a unique bus name per test process
-                // but allow multiple instances within the same process
-                let pid = std::process::id();
-                format!("com.hsipc.test.{pid}")
-            }
-            #[cfg(not(test))]
-            {
-                // For production, use a shared bus
-                "com.hsipc.bus".to_string()
-            }
-        };
+        Self::new_with_config(process_name, "com.hsipc.bus").await
+    }
 
+    /// Create a new IPMB transport with configurable bus name
+    pub async fn new_with_config(
+        process_name: &str,
+        bus_name: &str,
+    ) -> Result<(Self, IpmbReceiver)> {
         // Create IPMB options
-        let options = ipmb::Options::new(&bus_name, ipmb::label!(process_name), "");
+        let options = ipmb::Options::new(bus_name, ipmb::label!(process_name), "");
 
         // Join the IPMB bus
         tracing::info!(
@@ -69,28 +61,17 @@ impl IpmbTransport {
             bus_name,
             process_name
         );
-        #[cfg(test)]
-        {
-            tracing::info!("🧪 Test process {} using bus: {}", process_name, bus_name);
-        }
         let (sender, receiver) =
             ipmb::join::<IpmbMessage, IpmbMessage>(options, None).map_err(|e| {
                 tracing::error!("❌ IPMB join failed for bus {}: {}", bus_name, e);
                 Error::transport_msg(format!("IPMB join failed: {e}"))
             })?;
 
-        #[cfg(test)]
-        {
-            tracing::info!(
-                "🧪 Joined test IPMB bus {} as process: {}",
-                bus_name,
-                process_name
-            );
-        }
-        #[cfg(not(test))]
-        {
-            tracing::info!("🚌 Joined IPMB bus as process: {}", process_name);
-        }
+        tracing::info!(
+            "🚌 Joined IPMB bus {} as process: {}",
+            bus_name,
+            process_name
+        );
 
         let transport = Self {
             sender,

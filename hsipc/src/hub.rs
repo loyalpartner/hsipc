@@ -93,6 +93,111 @@ impl ServiceRegistry {
     }
 }
 
+/// Builder for ProcessHub configuration
+pub struct ProcessHubBuilder {
+    name: String,
+    bus_name: Option<String>,
+    fast_mode: bool,
+}
+
+impl ProcessHubBuilder {
+    /// Create a new ProcessHub builder
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            bus_name: None,
+            fast_mode: false,
+        }
+    }
+
+    /// Set custom bus name (default: "com.hsipc.bus")
+    pub fn with_bus_name(mut self, bus_name: &str) -> Self {
+        self.bus_name = Some(bus_name.to_string());
+        self
+    }
+
+    /// Enable fast mode (skip initialization delays)
+    pub fn with_fast_mode(mut self, fast_mode: bool) -> Self {
+        self.fast_mode = fast_mode;
+        self
+    }
+
+    /// Build the ProcessHub with the configured options
+    pub async fn build(self) -> Result<ProcessHub> {
+        // Use configured bus name or default
+        let bus_name = self.bus_name.unwrap_or_else(|| "com.hsipc.bus".to_string());
+
+        // Create transport with configurable bus name
+        let (transport, receiver) = IpmbTransport::new_with_config(&self.name, &bus_name).await?;
+        let shutdown_signal = Arc::new(AtomicBool::new(false));
+
+        let hub = ProcessHub {
+            name: self.name.clone(),
+            transport: Arc::new(transport),
+            service_registry: Arc::new(ServiceRegistry::new()),
+            subscription_registry: Arc::new(SubscriptionRegistry::new()),
+            pending_requests: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            remote_services: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            active_subscriptions: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            shutdown_signal: shutdown_signal.clone(),
+            message_loop_handle: Arc::new(RwLock::new(None)),
+            message_loop_ready: Arc::new(AtomicBool::new(false)),
+        };
+
+        // Start message processing and store the handle
+        tracing::info!("🔧 Starting message loop for ProcessHub: {}", self.name);
+        let handle = hub.start_message_loop(receiver).await;
+        {
+            let mut handle_guard = hub.message_loop_handle.write().await;
+            *handle_guard = Some(handle);
+        }
+        tracing::info!("✅ Message loop started for ProcessHub: {}", self.name);
+
+        // Synchronously discover existing services during initialization
+        // This ensures clients can immediately find services after hub creation
+        tracing::info!("🔍 Discovering existing services...");
+
+        // Wait a bit for the message loop to start (skip in fast mode)
+        if !self.fast_mode {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        // For fast mode, skip service discovery to avoid initialization issues
+        if !self.fast_mode {
+            // Query for existing services and wait for responses
+            if let Err(e) = hub.query_services().await {
+                tracing::warn!("Service discovery failed during initialization: {}", e);
+            }
+
+            // Give time for service responses to arrive (reduced for better performance)
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        } else {
+            tracing::info!("🧪 Skipping service discovery for fast mode");
+        }
+
+        // Log discovered services
+        {
+            let remote_services = hub.remote_services.read().await;
+            let service_count = remote_services.len();
+            if service_count > 0 {
+                tracing::info!("✅ Discovered {} remote services", service_count);
+                for (method, info) in remote_services.iter() {
+                    tracing::debug!(
+                        "   📡 {}: {} (from {})",
+                        method,
+                        info.name,
+                        info.process_name
+                    );
+                }
+            } else {
+                tracing::debug!("ℹ️  No remote services discovered");
+            }
+        }
+
+        Ok(hub)
+    }
+}
+
 /// Main process hub for IPC communication
 #[derive(Clone)]
 pub struct ProcessHub {
@@ -119,80 +224,24 @@ pub struct ProcessHub {
 }
 
 impl ProcessHub {
-    /// Create a new ProcessHub
+    /// Create a new ProcessHub with default configuration
+    /// For backward compatibility
     pub async fn new(name: &str) -> Result<Self> {
-        Self::new_with_config(name, false).await
+        ProcessHubBuilder::new(name).build().await
     }
 
-    /// Create a new ProcessHub with configuration for fast mode (skip delays)
+    /// Create a ProcessHub builder for advanced configuration
+    pub fn builder(name: &str) -> ProcessHubBuilder {
+        ProcessHubBuilder::new(name)
+    }
+
+    /// Create a new ProcessHub with fast mode configuration
+    /// For backward compatibility with existing tests
     pub async fn new_with_config(name: &str, fast_mode: bool) -> Result<Self> {
-        let (transport, receiver) = IpmbTransport::new_with_receiver(name).await?;
-        let shutdown_signal = Arc::new(AtomicBool::new(false));
-
-        let hub = Self {
-            name: name.to_string(),
-            transport: Arc::new(transport),
-            service_registry: Arc::new(ServiceRegistry::new()),
-            subscription_registry: Arc::new(SubscriptionRegistry::new()),
-            pending_requests: Arc::new(RwLock::new(std::collections::HashMap::new())),
-            remote_services: Arc::new(RwLock::new(std::collections::HashMap::new())),
-            active_subscriptions: Arc::new(RwLock::new(std::collections::HashMap::new())),
-            shutdown_signal: shutdown_signal.clone(),
-            message_loop_handle: Arc::new(RwLock::new(None)),
-            message_loop_ready: Arc::new(AtomicBool::new(false)),
-        };
-
-        // Start message processing and store the handle
-        tracing::info!("🔧 Starting message loop for ProcessHub: {}", name);
-        let handle = hub.start_message_loop(receiver).await;
-        {
-            let mut handle_guard = hub.message_loop_handle.write().await;
-            *handle_guard = Some(handle);
-        }
-        tracing::info!("✅ Message loop started for ProcessHub: {}", name);
-
-        // Synchronously discover existing services during initialization
-        // This ensures clients can immediately find services after hub creation
-        tracing::info!("🔍 Discovering existing services...");
-
-        // Wait a bit for the message loop to start (skip in fast mode)
-        if !fast_mode {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-
-        // For fast mode, skip service discovery to avoid initialization issues
-        if !fast_mode {
-            // Query for existing services and wait for responses
-            if let Err(e) = hub.query_services().await {
-                tracing::warn!("Service discovery failed during initialization: {}", e);
-            }
-
-            // Give time for service responses to arrive
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        } else {
-            tracing::info!("🧪 Skipping service discovery for fast mode");
-        }
-
-        // Log discovered services
-        {
-            let remote_services = hub.remote_services.read().await;
-            let service_count = remote_services.len();
-            if service_count > 0 {
-                tracing::info!("✅ Discovered {} remote services", service_count);
-                for (method, info) in remote_services.iter() {
-                    tracing::debug!(
-                        "   📡 {}: {} (from {})",
-                        method,
-                        info.name,
-                        info.process_name
-                    );
-                }
-            } else {
-                tracing::debug!("ℹ️  No remote services discovered");
-            }
-        }
-
-        Ok(hub)
+        ProcessHubBuilder::new(name)
+            .with_fast_mode(fast_mode)
+            .build()
+            .await
     }
 
     /// Start the message processing loop
@@ -503,7 +552,7 @@ impl ProcessHub {
         let _ = self.transport.send(registration_msg).await;
         // Give a small delay to ensure the broadcast message is sent (skip in fast mode)
         if !fast_mode {
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
         tracing::info!(
             "📤 Broadcasted service registration: {} methods={:?}",

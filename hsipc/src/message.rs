@@ -51,6 +51,8 @@ pub enum MessageType {
     SubscriptionReject,
     SubscriptionData,
     SubscriptionCancel,
+    // Transport control
+    Shutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

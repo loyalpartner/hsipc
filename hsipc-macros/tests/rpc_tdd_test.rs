@@ -15,17 +15,8 @@ use serde::{Deserialize, Serialize};
 
 /// Create a test ProcessHub with unique bus name to avoid conflicts
 async fn create_test_hub(test_name: &str) -> ProcessHub {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let process_name = format!("{}_{}_{}", test_name, std::process::id(), timestamp);
-    let bus_name = format!(
-        "com.hsipc.test.{}.{}.{}",
-        test_name,
-        std::process::id(),
-        timestamp
-    );
+    let process_name = format!("{}_{}", test_name, std::process::id());
+    let bus_name = format!("com.hsipc.test.{}.{}", test_name, std::process::id(),);
 
     ProcessHub::builder(&process_name)
         .with_bus_name(&bus_name)
@@ -334,13 +325,11 @@ mod tests {
     async fn test_subscription_data_flow() {
         // Use a single ProcessHub for both client and server
         // This tests the subscription mechanism within the same process
-        let hub = ProcessHub::new_with_config("subscription_test", true)
-            .await
-            .unwrap();
+        let hub = create_test_hub("subscription_test").await;
 
         // Register service with data streaming capability
         let service = CalculatorService::new(CalculatorImpl);
-        hub.register_service_with_config(service, true)
+        hub.register_service(service)
             .await
             .unwrap();
 
@@ -395,9 +384,7 @@ mod tests {
     /// Goal: Test subscription cleanup and cancellation
     #[tokio::test]
     async fn test_subscription_lifecycle() {
-        let hub = ProcessHub::new("test_subscription_lifecycle")
-            .await
-            .unwrap();
+        let hub = create_test_hub("test_subscription_lifecycle").await;
 
         // Register service
         let service = CalculatorService::new(CalculatorImpl);
@@ -618,7 +605,7 @@ mod tests {
 
         // Use unique process name to avoid conflicts with other tests
         let process_name = format!("test_dynamic_invocation_{}", std::process::id());
-        let hub = ProcessHub::new(&process_name).await.unwrap();
+        let hub = create_test_hub(&process_name).await;
 
         // Create tracking service
         let add_calls = Arc::new(Mutex::new(Vec::new()));
@@ -961,7 +948,7 @@ mod tests {
 
         // Use unique process name to avoid conflicts with other tests
         let process_name = format!("test_lifecycle_{}", std::process::id());
-        let hub = ProcessHub::new(&process_name).await.unwrap();
+        let hub = create_test_hub(&process_name).await;
 
         // Create lifecycle tracking service
         let active_subscriptions = Arc::new(Mutex::new(Vec::new()));
@@ -982,7 +969,7 @@ mod tests {
 
         // Test 1: Create subscription and receive some events
         let mut subscription = client
-            .subscribe_events(Some("lifecycle_test".to_string()))
+            .subscribe_events(Some("lifecycle_management_test".to_string()))
             .await
             .expect("Subscription should succeed");
 
@@ -1028,7 +1015,7 @@ mod tests {
         {
             let active = active_subscriptions.lock().await;
             assert_eq!(active.len(), 1);
-            assert_eq!(active[0], "lifecycle_test");
+            assert_eq!(active[0], "lifecycle_management_test");
         }
 
         // Test 2: Cancel subscription
@@ -1125,7 +1112,7 @@ mod tests {
 
         // Create unique process name
         let process_name = format!("test_multiple_simple_{}", std::process::id());
-        let hub = ProcessHub::new(&process_name).await.unwrap();
+        let hub = create_test_hub(&process_name).await;
 
         // Create simple service
         let counter = std::sync::Arc::new(tokio::sync::Mutex::new(0));
@@ -1208,7 +1195,7 @@ mod tests {
     async fn test_multiple_rpc_calls() {
         // Create unique process name
         let process_name = format!("test_multiple_rpc_{}", std::process::id());
-        let hub = ProcessHub::new(&process_name).await.unwrap();
+        let hub = create_test_hub(&process_name).await;
 
         // Create simple service
         let service = CalculatorService::new(CalculatorImpl);
@@ -1257,7 +1244,7 @@ mod tests {
     async fn test_mixed_rpc_and_subscription() {
         // Create unique process name
         let process_name = format!("test_mixed_{}", std::process::id());
-        let hub = ProcessHub::new(&process_name).await.unwrap();
+        let hub = create_test_hub(&process_name).await;
 
         // Create simple service
         let service = CalculatorService::new(CalculatorImpl);
@@ -1308,7 +1295,7 @@ mod tests {
     async fn test_transport_message_delivery() {
         // Create unique process name
         let process_name = format!("test_transport_{}", std::process::id());
-        let hub = ProcessHub::new(&process_name).await.unwrap();
+        let hub = create_test_hub(&process_name).await;
 
         println!("🧪 Testing transport layer message delivery...");
 
@@ -1382,7 +1369,7 @@ mod tests {
 
         // Create unique process name
         let process_name = format!("test_consecutive_{}", std::process::id());
-        let hub = ProcessHub::new(&process_name).await.unwrap();
+        let hub = create_test_hub(&process_name).await;
 
         // Create quiet service
         let service = CalculatorService::new(QuietService);
@@ -1428,7 +1415,7 @@ mod tests {
 
         // Use single hub to test that service discovery improvement works
         let hub_name = format!("test_discovery_{}", std::process::id());
-        let hub = ProcessHub::new(&hub_name).await.unwrap();
+        let hub = create_test_hub(&hub_name).await;
 
         // Register service
         let service = CalculatorService::new(CalculatorImpl);
@@ -1472,7 +1459,7 @@ mod tests {
 
         // Create unique process name for isolation
         let hub_name = format!("test_message_loop_resilience_{}", std::process::id());
-        let hub = ProcessHub::new(&hub_name).await.unwrap();
+        let hub = create_test_hub(&hub_name).await;
 
         // Register service to have something to call
         let service = CalculatorService::new(CalculatorImpl);
@@ -1550,7 +1537,7 @@ mod tests {
 
         // Create a shared hub first (like working demo)
         let shared_hub_name = format!("shared_test_hub_{}", std::process::id());
-        let hub = ProcessHub::new(&shared_hub_name).await.unwrap();
+        let hub = create_test_hub(&shared_hub_name).await;
 
         // Clone hub for service registration (simulating server process)
         let hub_a = hub.clone();
@@ -1647,7 +1634,7 @@ mod tests {
         );
 
         // hubA - Independent server process
-        let hub_a = ProcessHub::new(&server_name).await.unwrap();
+        let hub_a = create_test_hub(&server_name).await;
 
         // Register Calculator service on hubA
         let service = CalculatorService::new(CalculatorImpl);
@@ -1663,7 +1650,7 @@ mod tests {
         );
 
         // hubB - Independent client process (different IPMB process)
-        let hub_b = ProcessHub::new(&client_name).await.unwrap();
+        let hub_b = create_test_hub(&client_name).await;
 
         // Give hubB time to discover existing services on IPMB bus
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;

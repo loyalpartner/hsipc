@@ -4,6 +4,7 @@ use crate::transport::Transport;
 use crate::{Error, Message, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use type_uuid::TypeUuid;
 
 /// IPMB message wrapper for our Message type
@@ -13,47 +14,40 @@ struct IpmbMessage {
     inner: Message,
 }
 
-/// IPMB-based transport implementation
+/// IPMB-based transport implementation with integrated receiver
 pub struct IpmbTransport {
     sender: ipmb::EndpointSender<IpmbMessage>,
+    receiver: std::sync::Arc<std::sync::Mutex<ipmb::EndpointReceiver<IpmbMessage>>>,
     process_name: String,
 }
 
-/// Separate receiver for message processing
-pub struct IpmbReceiver {
-    receiver: ipmb::EndpointReceiver<IpmbMessage>,
+/// Builder for IpmbTransport
+pub struct IpmbTransportBuilder {
+    process_name: String,
+    bus_name: Option<String>,
 }
 
-impl IpmbReceiver {
-    /// Receive a message
-    pub async fn recv(&mut self) -> Result<Message> {
-        let timeout = std::time::Duration::from_secs(30);
-        match self.receiver.recv(Some(timeout)) {
-            Ok(ipmb_msg) => Ok(ipmb_msg.payload.inner),
-            Err(e) => Err(Error::transport_msg(format!("IPMB recv failed: {e}"))),
+impl IpmbTransportBuilder {
+    /// Create a new builder with process name
+    pub fn new(process_name: impl Into<String>) -> Self {
+        Self {
+            process_name: process_name.into(),
+            bus_name: None,
         }
     }
-}
 
-impl IpmbTransport {
-    /// Create a new IPMB transport with default bus name
-    pub async fn new(process_name: &str) -> Result<Self> {
-        let (transport, _receiver) = Self::new_with_receiver(process_name).await?;
-        Ok(transport)
+    /// Set custom bus name (optional)
+    pub fn with_bus_name(mut self, bus_name: impl Into<String>) -> Self {
+        self.bus_name = Some(bus_name.into());
+        self
     }
 
-    /// Create a new IPMB transport with separate receiver using default bus name
-    pub async fn new_with_receiver(process_name: &str) -> Result<(Self, IpmbReceiver)> {
-        Self::new_with_config(process_name, "com.hsipc.bus").await
-    }
-
-    /// Create a new IPMB transport with configurable bus name
-    pub async fn new_with_config(
-        process_name: &str,
-        bus_name: &str,
-    ) -> Result<(Self, IpmbReceiver)> {
+    /// Build the IpmbTransport
+    pub async fn build(self) -> Result<IpmbTransport> {
+        let bus_name = self.bus_name.unwrap_or_else(|| "com.hsipc.bus".to_string());
+        let process_name = &self.process_name;
         // Create IPMB options
-        let options = ipmb::Options::new(bus_name, ipmb::label!(process_name), "");
+        let options = ipmb::Options::new(&bus_name, ipmb::label!(process_name), "");
 
         // Join the IPMB bus
         tracing::info!(
@@ -73,14 +67,23 @@ impl IpmbTransport {
             process_name
         );
 
-        let transport = Self {
+        Ok(IpmbTransport {
             sender,
-            process_name: process_name.to_string(),
-        };
+            receiver: std::sync::Arc::new(std::sync::Mutex::new(receiver)),
+            process_name: self.process_name,
+        })
+    }
+}
 
-        let ipmb_receiver = IpmbReceiver { receiver };
+impl IpmbTransport {
+    /// Create a builder for IpmbTransport
+    pub fn builder(process_name: impl Into<String>) -> IpmbTransportBuilder {
+        IpmbTransportBuilder::new(process_name)
+    }
 
-        Ok((transport, ipmb_receiver))
+    /// Create a new IPMB transport with default settings (for backward compatibility)
+    pub async fn new(process_name: &str) -> Result<Self> {
+        Self::builder(process_name).build().await
     }
 }
 
@@ -108,67 +111,66 @@ impl Transport for IpmbTransport {
             self.process_name
         );
 
-        match self.sender.send(ipmb_message) {
-            Ok(()) => {
-                tracing::debug!(
-                    "✅ Successfully sent IPMB message type: {:?} id: {} to {:?}",
-                    msg.msg_type,
-                    msg.id,
-                    msg.target
-                );
-                Ok(())
+        self.sender.send(ipmb_message).map_err(|e| {
+            tracing::error!("Failed to send IPMB message: {e}");
+            Error::transport_msg(format!("Failed to send IPMB message: {e}"))
+        })
+    }
+
+    async fn recv(&self) -> Result<Message> {
+        // ipmb's recv is synchronous and blocking, so we need to run it in a blocking thread
+        // to avoid blocking the async runtime
+
+        let receiver = Arc::clone(&self.receiver);
+
+        // Use spawn_blocking to run the synchronous recv in a separate thread
+        let recv_result = tokio::task::spawn_blocking(move || {
+            let mut guard = receiver.lock().unwrap();
+            guard.recv(None)  // No timeout, true blocking wait
+        })
+        .await
+        .map_err(|e| Error::runtime_msg(format!("Blocking task failed: {e}")))?;
+
+        match recv_result {
+            Ok(ipmb_msg) => {
+                let msg = ipmb_msg.payload.inner;
+                
+                // Check if this is a shutdown message
+                if matches!(msg.msg_type, crate::message::MessageType::Shutdown) {
+                    tracing::info!("🛑 Received shutdown message");
+                    return Err(Error::connection_msg("Transport closed"));
+                }
+                
+                Ok(msg)
             }
             Err(e) => {
-                let error_msg = format!("IPMB send failed: {e}");
-
-                // Log detailed error information
-                tracing::error!("❌ IPMB send error: {}", error_msg);
-                tracing::error!(
-                    "📧 Failed message details: type={:?} id={} target={:?} process={}",
-                    msg.msg_type,
-                    msg.id,
-                    msg.target,
-                    self.process_name
-                );
-
-                // Be more conservative about ignoring errors
-                if error_msg.contains("Invalid argument") {
-                    tracing::error!(
-                        "🚨 IPMB send error (CRITICAL): {} - This may cause message loss!",
-                        error_msg
-                    );
-                    tracing::error!(
-                        "🚨 System information: process={} bus_name likely contains process name",
-                        self.process_name
-                    );
-
-                    // For subscription requests, this is critical - don't ignore
-                    if msg.msg_type == crate::message::MessageType::SubscriptionRequest {
-                        return Err(Error::transport_msg(format!(
-                            "Critical IPMB error for subscription: {error_msg}"
-                        )));
-                    }
-
-                    // Still treat other messages as warnings for now
-                    Ok(())
-                } else {
-                    tracing::error!("❌ IPMB send failed: {}", error_msg);
-                    Err(Error::transport_msg(error_msg))
-                }
+                // Real transport error
+                Err(Error::transport_msg(format!("IPMB recv failed: {e}")))
             }
         }
     }
 
-    async fn recv(&self) -> Result<Message> {
-        // This method is not used anymore, as receiver is separated
-        Err(Error::transport_msg(
-            "recv not supported on IpmbTransport, use IpmbReceiver instead",
-        ))
-    }
-
     async fn close(&self) -> Result<()> {
-        // IPMB handles cleanup automatically
         tracing::info!("🚌 Closing IPMB transport for {}", self.process_name);
+        
+        // Send a shutdown message to wake up any blocking recv operations
+        let shutdown_msg = crate::Message {
+            id: uuid::Uuid::new_v4(),
+            msg_type: crate::message::MessageType::Shutdown,
+            source: self.process_name.clone(),
+            target: Some(self.process_name.clone()), // Send to self
+            topic: None,
+            payload: vec![],
+            correlation_id: None,
+            metadata: Default::default(),
+        };
+        
+        // Send shutdown message, but don't fail if it doesn't work
+        if let Err(e) = self.send(shutdown_msg).await {
+            tracing::warn!("Failed to send shutdown message: {}", e);
+            // Continue with shutdown anyway
+        }
+        
         Ok(())
     }
 }

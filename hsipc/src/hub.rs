@@ -15,7 +15,7 @@ use crate::{
 };
 
 // Use real IPMB transport for all environments
-use crate::transport_ipmb::{IpmbReceiver, IpmbTransport};
+use crate::transport_ipmb::IpmbTransport;
 
 // Simple Service trait for RPC system
 #[async_trait::async_trait]
@@ -127,8 +127,11 @@ impl ProcessHubBuilder {
         // Use configured bus name or default
         let bus_name = self.bus_name.unwrap_or_else(|| "com.hsipc.bus".to_string());
 
-        // Create transport with configurable bus name
-        let (transport, receiver) = IpmbTransport::new_with_config(&self.name, &bus_name).await?;
+        // Create transport with configurable bus name using builder pattern
+        let transport = IpmbTransport::builder(&self.name)
+            .with_bus_name(&bus_name)
+            .build()
+            .await?;
         let shutdown_signal = Arc::new(AtomicBool::new(false));
 
         let hub = ProcessHub {
@@ -146,7 +149,7 @@ impl ProcessHubBuilder {
 
         // Start message processing and store the handle
         tracing::info!("🔧 Starting message loop for ProcessHub: {}", self.name);
-        let handle = hub.start_message_loop(receiver).await;
+        let handle = hub.start_message_loop().await;
         {
             let mut handle_guard = hub.message_loop_handle.write().await;
             *handle_guard = Some(handle);
@@ -245,7 +248,7 @@ impl ProcessHub {
     }
 
     /// Start the message processing loop
-    async fn start_message_loop(&self, mut receiver: IpmbReceiver) -> tokio::task::JoinHandle<()> {
+    async fn start_message_loop(&self) -> tokio::task::JoinHandle<()> {
         let transport = self.transport.clone();
         let service_registry = self.service_registry.clone();
         let subscription_registry = self.subscription_registry.clone();
@@ -263,8 +266,8 @@ impl ProcessHub {
             message_loop_ready.store(true, Ordering::Relaxed);
 
             while !shutdown_signal.load(Ordering::Relaxed) {
-                // Use a timeout to periodically check shutdown signal
-                let recv_result = receiver.recv().await;
+                // Use transport's recv method with integrated timeout handling
+                let recv_result = transport.recv().await;
 
                 match recv_result {
                     Ok(msg) => {
@@ -287,9 +290,23 @@ impl ProcessHub {
                         .await;
                         tracing::info!("✅ Message loop completed processing message");
                     }
-                    Err(_) => {
-                        // Timeout - continue to check shutdown signal
-                        continue;
+                    Err(e) => {
+                        // Handle ConnectionLost specially - it means shutdown
+                        if matches!(e, Error::Connection { .. }) {
+                            tracing::info!("🔌 Transport connection lost, stopping message loop");
+                            break;
+                        }
+                        // Handle timeout vs real errors differently
+                        if e.to_string().contains("timeout") {
+                            // Normal timeout - just continue (no logging needed)
+                            continue;
+                        } else {
+                            // Real transport error - log and continue (don't crash message loop)
+                            tracing::warn!("⚠️ Message loop recv error: {}", e);
+                            // Small delay to prevent busy loop on persistent errors
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            continue;
+                        }
                     }
                 }
             }
@@ -889,6 +906,9 @@ impl ProcessHub {
         // Set shutdown signal
         self.shutdown_signal.store(true, Ordering::Relaxed);
 
+        // Close transport first to send shutdown message and wake up recv
+        self.transport.close().await?;
+
         // Wait for message loop to finish
         if let Some(handle) = {
             let mut handle_guard = self.message_loop_handle.write().await;
@@ -896,8 +916,8 @@ impl ProcessHub {
         } {
             tracing::info!("⏳ Waiting for message loop to stop...");
 
-            // Give the message loop some time to finish gracefully
-            let shutdown_result = tokio::time::timeout(Duration::from_millis(500), handle).await;
+            // Give the message loop some time to finish gracefully (increased timeout)
+            let shutdown_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
 
             match shutdown_result {
                 Ok(Ok(())) => {
@@ -912,9 +932,6 @@ impl ProcessHub {
                 }
             }
         }
-
-        // Close transport
-        self.transport.close().await?;
 
         tracing::info!("🛑 ProcessHub shutdown complete: {}", self.name);
         Ok(())

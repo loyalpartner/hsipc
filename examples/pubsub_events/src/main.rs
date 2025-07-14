@@ -78,7 +78,7 @@ impl Subscriber for AllSensorSubscriber {
 async fn run_publisher() -> Result<()> {
     println!("🚀 Starting sensor data publisher...");
 
-    let hub = ProcessHub::new("sensor_publisher").await?;
+    let hub = ProcessHub::builder("sensor_publisher").build().await?;
 
     let mut event_count = 0;
     let max_events = 6; // Publish 6 events total (3 temp + 3 humidity)
@@ -129,13 +129,17 @@ async fn run_publisher() -> Result<()> {
         }
     }
 
+    // Explicitly shutdown the hub
+    println!("🛑 Shutting down publisher...");
+    hub.shutdown().await?;
+    
     Ok(())
 }
 
 async fn run_subscriber() -> Result<()> {
     println!("👂 Starting event subscribers...");
 
-    let hub = ProcessHub::new("event_subscriber").await?;
+    let hub = ProcessHub::builder("event_subscriber").build().await?;
 
     // Register subscribers
     let temp_subscriber = TemperatureSubscriber;
@@ -153,6 +157,11 @@ async fn run_subscriber() -> Result<()> {
     sleep(Duration::from_secs(20)).await;
     
     println!("✅ Subscriber session completed. Exiting...");
+    
+    // Explicitly shutdown the hub
+    println!("🛑 Shutting down subscriber...");
+    hub.shutdown().await?;
+    
     Ok(())
 }
 

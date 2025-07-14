@@ -111,7 +111,7 @@ async fn run_server() -> Result<()> {
     info!("=== Starting Calculator Server ===");
 
     // Create server hub
-    let hub = ProcessHub::new("calculator_server").await?;
+    let hub = ProcessHub::builder("calculator_server").build().await?;
     info!("Server hub created");
 
     // Register calculator service
@@ -146,7 +146,7 @@ async fn run_client() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
     // Create client hub
-    let hub = ProcessHub::new("calculator_client").await?;
+    let hub = ProcessHub::builder("calculator_client").build().await?;
     let client = CalculatorClient::new(hub);
     info!("Client connected");
 

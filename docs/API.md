@@ -196,7 +196,7 @@ impl Calculator for CalculatorImpl {
 // 使用示例
 #[tokio::main]
 async fn main() -> Result<()> {
-    let hub = ProcessHub::new("calculator_app").await?;
+    let hub = ProcessHub::builder("calculator_app").build().await?;
     
     // 注册服务 - 生成的是 CalculatorService，不是 CalculatorServiceService
     let service = CalculatorService::new(CalculatorImpl);
@@ -304,7 +304,7 @@ fn main() -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 创建 ProcessHub
-    let hub = ProcessHub::new("calculator_app").await?;
+    let hub = ProcessHub::builder("calculator_app").build().await?;
     
     // 注册服务（自动生成 CalculatorService）
     let calculator = CalculatorImpl;
@@ -371,7 +371,7 @@ pub trait OrderService {
 // 在同一个应用中使用多个服务
 #[tokio::main]
 async fn main() -> Result<()> {
-    let hub = ProcessHub::new("multi_service_app").await?;
+    let hub = ProcessHub::builder("multi_service_app").build().await?;
     
     // 注册多个服务
     hub.register_service(UserService::new(UserServiceImpl)).await?;
@@ -398,7 +398,7 @@ async fn main() -> Result<()> {
 // 服务器进程
 #[tokio::main]
 async fn server_main() -> Result<()> {
-    let hub = ProcessHub::new("calculator_server").await?;
+    let hub = ProcessHub::builder("calculator_server").build().await?;
     
     // 注册服务
     let service = CalculatorService::new(CalculatorImpl);
@@ -412,7 +412,7 @@ async fn server_main() -> Result<()> {
 // 客户端进程
 #[tokio::main]
 async fn client_main() -> Result<()> {
-    let hub = ProcessHub::new("calculator_client").await?;
+    let hub = ProcessHub::builder("calculator_client").build().await?;
     
     // 连接到远程服务
     let client = CalculatorClient::new(hub);
@@ -540,9 +540,34 @@ RPC 系统 v2 已经可以用于生产环境，提供类型安全、高性能的
 
 #### 创建 ProcessHub
 
+hsipc 提供了两种创建 ProcessHub 的方式：
+
+**1. Builder 模式（推荐）**
+
 ```rust
 use hsipc::{ProcessHub, Result};
 
+#[tokio::main]
+async fn main() -> Result<()> {
+    // 基本用法
+    let hub = ProcessHub::builder("my_process")
+        .build()
+        .await?;
+    
+    // 高级配置
+    let hub = ProcessHub::builder("my_process")
+        .with_fast_mode(true)           // 启用快速模式
+        .with_bus_name("custom_bus")    // 自定义总线名称
+        .build()
+        .await?;
+    
+    Ok(())
+}
+```
+
+**2. 直接创建（向后兼容）**
+
+```rust
 #[tokio::main]
 async fn main() -> Result<()> {
     // 异步方式
@@ -551,6 +576,101 @@ async fn main() -> Result<()> {
     // 同步方式
     let sync_hub = hsipc::SyncProcessHub::new("my_process")?;
     
+    Ok(())
+}
+```
+
+#### Builder 配置选项
+
+| 选项 | 描述 | 默认值 |
+|------|------|--------|
+| `with_fast_mode(bool)` | 启用快速模式，跳过某些初始化检查 | `false` |
+| `with_bus_name(String)` | 自定义 IPMB 总线名称 | `"com.hsipc.bus"` |
+
+#### 退出机制
+
+ProcessHub 提供了完善的退出机制来确保资源的正确清理：
+
+**1. 显式退出（推荐）**
+
+```rust
+#[tokio::main]
+async fn main() -> Result<()> {
+    let hub = ProcessHub::builder("my_process").build().await?;
+    
+    // ... 业务逻辑 ...
+    
+    // 显式调用 shutdown
+    hub.shutdown().await?;
+    Ok(())
+}
+```
+
+**2. 信号处理**
+
+```rust
+use tokio::signal;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let hub = ProcessHub::builder("my_process").build().await?;
+    
+    // 处理 Ctrl+C 信号
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            println!("Received Ctrl+C, shutting down...");
+            hub.shutdown().await?;
+        }
+        _ = run_business_logic(&hub) => {
+            // 正常结束
+        }
+    }
+    
+    Ok(())
+}
+```
+
+**3. 自动清理（RAII）**
+
+```rust
+// ProcessHub 实现了 Drop trait，会自动清理资源
+{
+    let hub = ProcessHub::builder("process").build().await?;
+    // ... 使用 hub ...
+} // hub 自动 drop，触发清理过程
+```
+
+#### 跨进程退出协调
+
+hsipc 支持进程间的退出协调机制：
+
+```rust
+// 服务端
+#[tokio::main]
+async fn server_main() -> Result<()> {
+    let hub = ProcessHub::builder("server").build().await?;
+    
+    // 注册服务
+    hub.register_service(MyService).await?;
+    
+    // 等待退出信号
+    tokio::signal::ctrl_c().await?;
+    
+    // 显式关闭会通知所有客户端
+    hub.shutdown().await?;
+    Ok(())
+}
+
+// 客户端
+#[tokio::main] 
+async fn client_main() -> Result<()> {
+    let hub = ProcessHub::builder("client").build().await?;
+    
+    // 使用服务
+    // ... 业务逻辑 ...
+    
+    // 客户端退出时会自动处理
+    hub.shutdown().await?;
     Ok(())
 }
 ```

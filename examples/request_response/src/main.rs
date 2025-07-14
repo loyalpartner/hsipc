@@ -226,12 +226,12 @@ async fn main() -> Result<()> {
 
     match args.get(1).map(|s| s.as_str()) {
         Some("services") => {
-            let hub = ProcessHub::new("service_provider").await?;
+            let hub = ProcessHub::builder("service_provider").build().await?;
             println!("🔄 Services running... Press Ctrl+C to stop");
             run_services(hub).await
         }
         Some("client") => {
-            let hub = ProcessHub::new("client").await?;
+            let hub = ProcessHub::builder("client").build().await?;
             run_client(hub).await?;
             println!("✅ Client completed!");
             Ok(())
@@ -242,12 +242,12 @@ async fn main() -> Result<()> {
             // For demo, run both services and client with shared hub
             println!("🎬 Running demo with both services and client...");
 
-            let hub = ProcessHub::new("shared_hub").await?;
-            let services_hub = hub.clone();
-            let client_hub = hub.clone();
+            let services_hub = ProcessHub::builder("services").build().await?;
+            let client_hub = ProcessHub::builder("client").build().await?;
 
+            let services_hub_clone = services_hub.clone();
             let services_handle = tokio::spawn(async move {
-                if let Err(e) = run_services(services_hub).await {
+                if let Err(e) = run_services(services_hub_clone).await {
                     eprintln!("Services error: {e}");
                 }
             });
@@ -264,8 +264,10 @@ async fn main() -> Result<()> {
             // Wait for client to finish
             let _ = client_handle.await;
 
+            services_hub.shutdown().await;
+
             println!("\n🎯 Demo completed! Shutting down...");
-            services_handle.abort();
+            // services_handle.abort();
 
             Ok(())
         }

@@ -332,6 +332,225 @@ pub enum Error {
 - **性能分析**: 识别性能瓶颈
 - **健康检查**: 系统健康状态监控
 
+## 退出机制和生命周期管理
+
+hsipc 提供了完善的退出机制，确保所有进程能够优雅地协调退出，避免资源泄漏和未处理的消息。
+
+### 退出消息流程
+
+#### Shutdown 消息的设计
+
+```rust
+pub struct Message {
+    pub msg_type: MessageType::Shutdown,
+    pub source: String,              // 发起退出的进程
+    pub target: Option<String>,      // 目标进程（None 表示广播）
+    // ...
+}
+```
+
+#### 跨进程退出协调
+
+```
+客户端                    服务端                    传输层
+  |                        |                        |
+  |--- shutdown() -------->|                        |
+  |                        |--- process_message --->|
+  |                        |                        |--- 检查消息目标
+  |                        |<-- Shutdown Message ---|
+  |<-- Transport Closed ---|                        |
+  |                        |                        |
+```
+
+**流程说明**:
+
+1. **客户端发起退出**: 调用 `hub.shutdown()` 或进程自然结束
+2. **服务端接收到退出消息**: ProcessHub 的 `process_message` 检测到 Shutdown 消息
+3. **退出消息转发**: 服务端将 Shutdown 消息发送给原始发送者
+4. **传输层处理**: 各进程的传输层接收到针对自己的 Shutdown 消息后关闭连接
+5. **消息循环退出**: 连接关闭导致消息循环优雅退出
+
+### 传输层的消息转发机制
+
+#### IpmbTransport 的智能路由
+
+```rust
+async fn recv(&self) -> Result<Message> {
+    // ... 接收消息 ...
+    
+    // 检查消息是否是发给当前进程的
+    if let Some(ref target) = msg.target {
+        if target != &self.process_name {
+            // 消息不是给我们的，转发给正确的目标
+            self.send(msg.clone()).await?;
+            return self.recv().await; // 继续接收下一条消息
+        }
+    }
+    
+    // 检查是否是针对我们的退出消息
+    if matches!(msg.msg_type, MessageType::Shutdown) {
+        if msg.source == self.process_name {
+            return Err(Error::connection_msg("Transport closed"));
+        }
+    }
+    
+    Ok(msg)
+}
+```
+
+**关键特性**:
+- **消息目标检查**: 确保消息只被正确的进程处理
+- **自动转发**: 将错误路由的消息转发给正确的目标
+- **递归接收**: 转发后继续接收下一条消息，保持接收循环
+
+### ProcessHub 的生命周期管理
+
+#### 显式退出方法
+
+```rust
+impl ProcessHub {
+    /// 优雅关闭 ProcessHub
+    pub async fn shutdown(&self) -> Result<()> {
+        // 1. 设置退出信号
+        self.shutdown_signal.store(true, Ordering::Relaxed);
+        
+        // 2. 关闭传输层，发送 Shutdown 消息
+        self.transport.close().await?;
+        
+        // 3. 等待消息循环退出
+        if let Some(handle) = self.message_loop_handle.write().await.take() {
+            tokio::time::timeout(Duration::from_secs(2), handle).await??;
+        }
+        
+        Ok(())
+    }
+}
+```
+
+#### 自动清理机制 (Drop Trait)
+
+```rust
+impl Drop for ProcessHub {
+    fn drop(&mut self) {
+        // 设置退出信号
+        self.shutdown_signal.store(true, Ordering::Relaxed);
+        
+        // 尝试异步清理
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let transport = self.transport.clone();
+            handle.spawn(async move {
+                let _ = transport.close().await;
+            });
+        }
+    }
+}
+```
+
+### 退出消息的生成
+
+#### 标准化的退出消息创建
+
+```rust
+impl Message {
+    /// 创建退出消息
+    pub fn shutdown(source: String, target: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::Shutdown,
+            source,
+            target: Some(target),
+            topic: Some("shutdown".to_string()),
+            payload: bincode::serialize(&()).unwrap_or_default(),
+            correlation_id: None,
+            metadata: MessageMetadata::default(),
+        }
+    }
+}
+```
+
+### Builder 模式支持
+
+#### ProcessHub 的现代化创建方式
+
+```rust
+// 推荐方式：使用 Builder 模式
+let hub = ProcessHub::builder("process_name")
+    .with_fast_mode(true)           // 可选：快速模式
+    .with_bus_name("custom_bus")    // 可选：自定义总线名
+    .build()
+    .await?;
+
+// 向后兼容：直接创建
+let hub = ProcessHub::new("process_name").await?;
+```
+
+#### Builder 配置选项
+
+```rust
+pub struct ProcessHubBuilder {
+    name: String,
+    fast_mode: bool,
+    bus_name: Option<String>,
+}
+```
+
+### 最佳实践
+
+#### 1. 显式退出处理
+
+```rust
+// 推荐：显式调用 shutdown
+#[tokio::main]
+async fn main() -> Result<()> {
+    let hub = ProcessHub::builder("my_process").build().await?;
+    
+    // ... 业务逻辑 ...
+    
+    // 显式关闭
+    hub.shutdown().await?;
+    Ok(())
+}
+```
+
+#### 2. 信号处理
+
+```rust
+// 处理 Ctrl+C 信号
+tokio::select! {
+    _ = tokio::signal::ctrl_c() => {
+        println!("Received Ctrl+C, shutting down...");
+        hub.shutdown().await?;
+    }
+    _ = run_business_logic() => {
+        // 正常结束
+    }
+}
+```
+
+#### 3. 资源清理
+
+```rust
+// 使用 RAII 确保资源清理
+{
+    let hub = ProcessHub::builder("process").build().await?;
+    // ... 使用 hub ...
+} // hub 自动 drop，触发清理
+```
+
+### 错误恢复和重试
+
+#### 传输层错误处理
+
+- **连接丢失**: 自动触发消息循环退出
+- **消息转发失败**: 记录警告但不中断服务
+- **超时处理**: 提供可配置的退出超时时间
+
+#### 进程间同步
+
+- **退出协调**: 确保所有相关进程都能收到退出信号
+- **资源同步**: 避免进程间的资源竞争
+- **状态一致性**: 保证退出过程中的状态一致性
+
 ## 未来架构演进
 
 ### 短期目标

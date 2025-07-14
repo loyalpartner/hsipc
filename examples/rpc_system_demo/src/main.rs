@@ -217,7 +217,7 @@ async fn run_demo() -> hsipc::Result<()> {
     info!("🚀 RPC System Demo - Testing all features...");
 
     // Setup
-    let hub = ProcessHub::new("rpc_demo").await?;
+    let hub = ProcessHub::builder("rpc_demo").build().await?;
     let service = CalculatorService::new(CalculatorImpl::new());
     hub.register_service(service).await?;
 
@@ -289,7 +289,7 @@ async fn run_demo() -> hsipc::Result<()> {
 async fn run_server() -> hsipc::Result<()> {
     println!("🖥️  Starting RPC server...");
 
-    let hub = ProcessHub::new("calculator_server").await?;
+    let hub = ProcessHub::builder("calculator_server").build().await?;
     let service = CalculatorService::new(CalculatorImpl::new());
     hub.register_service(service).await?;
 
@@ -309,7 +309,7 @@ async fn run_server() -> hsipc::Result<()> {
 async fn run_client() -> hsipc::Result<()> {
     println!("📱 Starting RPC client...");
 
-    let hub = ProcessHub::new("calculator_client").await?;
+    let hub = ProcessHub::builder("calculator_client").build().await?;
     let client = CalculatorClient::new(hub);
 
     // Simple client operations

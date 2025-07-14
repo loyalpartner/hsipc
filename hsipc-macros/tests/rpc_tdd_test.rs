@@ -329,9 +329,7 @@ mod tests {
 
         // Register service with data streaming capability
         let service = CalculatorService::new(CalculatorImpl);
-        hub.register_service(service)
-            .await
-            .unwrap();
+        hub.register_service(service).await.unwrap();
 
         // Create client connected to the same hub
         let client = CalculatorClient::new(hub.clone());

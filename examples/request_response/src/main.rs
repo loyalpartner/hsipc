@@ -149,10 +149,17 @@ async fn run_services(hub: ProcessHub) -> Result<()> {
     // Additional wait to ensure services are fully registered
     sleep(Duration::from_secs(1)).await;
 
-    // Keep services running
-    loop {
-        sleep(Duration::from_secs(1)).await;
+    // Keep services running until Ctrl+C
+    println!("🔄 Services running. Press Ctrl+C to stop...");
+    
+    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl_c");
+    println!("🛑 Received Ctrl+C, shutting down services...");
+    
+    if let Err(e) = hub.shutdown().await {
+        eprintln!("Error during shutdown: {}", e);
     }
+    
+    Ok(())
 }
 
 async fn run_client(hub: ProcessHub) -> Result<()> {
@@ -199,6 +206,7 @@ async fn run_client(hub: ProcessHub) -> Result<()> {
         Err(e) => println!("❌ Get user failed: {e}"),
     }
 
+    println!("✅ All client operations completed! Client exiting...");
     Ok(())
 }
 

@@ -295,9 +295,12 @@ async fn run_server() -> hsipc::Result<()> {
 
     println!("✅ Server running. Press Ctrl+C to stop.");
 
-    // Keep server running
-    tokio::signal::ctrl_c().await?;
-    println!("🛑 Server shutting down...");
+    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl_c");
+    println!("🛑 Received Ctrl+C, shutting down server...");
+    
+    if let Err(e) = hub.shutdown().await {
+        eprintln!("Error during server shutdown: {}", e);
+    }
 
     Ok(())
 }

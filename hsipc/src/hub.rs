@@ -938,6 +938,31 @@ impl ProcessHub {
     }
 }
 
+impl Drop for ProcessHub {
+    fn drop(&mut self) {
+        // Set shutdown signal to notify background tasks
+        self.shutdown_signal.store(true, Ordering::Relaxed);
+        
+        // Try to perform a quick cleanup in a blocking manner
+        // Note: This is a best-effort cleanup. For graceful shutdown,
+        // users should call shutdown() explicitly before dropping.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // We're in an async context, spawn a cleanup task
+            let transport = self.transport.clone();
+            let name = self.name.clone();
+            handle.spawn(async move {
+                tracing::debug!("🧹 ProcessHub {} dropped, performing background cleanup", name);
+                if let Err(e) = transport.close().await {
+                    tracing::warn!("⚠️ Error during drop cleanup for {}: {}", name, e);
+                }
+            });
+        } else {
+            // We're not in an async context, do minimal cleanup
+            tracing::debug!("🧹 ProcessHub {} dropped (no async context available)", self.name);
+        }
+    }
+}
+
 /// Synchronous wrapper for ProcessHub
 pub struct SyncProcessHub {
     runtime: tokio::runtime::Runtime,

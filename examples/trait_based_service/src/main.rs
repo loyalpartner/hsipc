@@ -127,12 +127,16 @@ async fn run_server() -> Result<()> {
     // Wait for service registration to propagate
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    info!("🔄 Server running... Press Ctrl+C to stop");
+    info!("🔄 Server running. Press Ctrl+C to stop...");
 
-    // Keep server running
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl_c");
+    info!("🛑 Received Ctrl+C, shutting down server...");
+    
+    if let Err(e) = hub.shutdown().await {
+        info!("Error during server shutdown: {}", e);
     }
+    
+    Ok(())
 }
 
 async fn run_client() -> Result<()> {
@@ -170,7 +174,7 @@ async fn run_client() -> Result<()> {
         Err(e) => info!("❌ Factorial failed: {e}"),
     }
 
-    info!("✅ Client test completed!");
+    info!("✅ Client test completed! Client exiting...");
     Ok(())
 }
 

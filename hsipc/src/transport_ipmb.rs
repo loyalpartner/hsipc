@@ -126,7 +126,7 @@ impl Transport for IpmbTransport {
         // Use spawn_blocking to run the synchronous recv in a separate thread
         let recv_result = tokio::task::spawn_blocking(move || {
             let mut guard = receiver.lock().unwrap();
-            guard.recv(None)  // No timeout, true blocking wait
+            guard.recv(None) // No timeout, true blocking wait
         })
         .await
         .map_err(|e| Error::runtime_msg(format!("Blocking task failed: {e}")))?;
@@ -134,13 +134,13 @@ impl Transport for IpmbTransport {
         match recv_result {
             Ok(ipmb_msg) => {
                 let msg = ipmb_msg.payload.inner;
-                
+
                 // Check if this is a shutdown message
                 if matches!(msg.msg_type, crate::message::MessageType::Shutdown) {
                     tracing::info!("🛑 Received shutdown message");
                     return Err(Error::connection_msg("Transport closed"));
                 }
-                
+
                 Ok(msg)
             }
             Err(e) => {
@@ -152,7 +152,7 @@ impl Transport for IpmbTransport {
 
     async fn close(&self) -> Result<()> {
         tracing::info!("🚌 Closing IPMB transport for {}", self.process_name);
-        
+
         // Send a shutdown message to wake up any blocking recv operations
         let shutdown_msg = crate::Message {
             id: uuid::Uuid::new_v4(),
@@ -164,13 +164,13 @@ impl Transport for IpmbTransport {
             correlation_id: None,
             metadata: Default::default(),
         };
-        
+
         // Send shutdown message, but don't fail if it doesn't work
         if let Err(e) = self.send(shutdown_msg).await {
             tracing::warn!("Failed to send shutdown message: {}", e);
             // Continue with shutdown anyway
         }
-        
+
         Ok(())
     }
 }

@@ -330,4 +330,20 @@ impl Message {
             metadata: MessageMetadata::default(),
         }
     }
+
+    /// Create a shutdown message
+    pub fn shutdown(source: String, target: String) -> Self {
+        let payload = bincode::serialize(&()).unwrap_or_default();
+
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::Shutdown,
+            source,
+            target: Some(target),
+            topic: Some("shutdown".to_string()),
+            payload,
+            correlation_id: None,
+            metadata: MessageMetadata::default(),
+        }
+    }
 }

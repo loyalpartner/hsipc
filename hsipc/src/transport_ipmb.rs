@@ -135,10 +135,12 @@ impl Transport for IpmbTransport {
             Ok(ipmb_msg) => {
                 let msg = ipmb_msg.payload.inner;
 
-                // Check if this is a shutdown message
+                // Check if this is a shutdown message for us
                 if matches!(msg.msg_type, crate::message::MessageType::Shutdown) {
-                    tracing::info!("🛑 Received shutdown message");
-                    return Err(Error::connection_msg("Transport closed"));
+                    if msg.source == self.process_name {
+                        tracing::info!("🛑 Received shutdown message for {}", self.process_name);
+                        return Err(Error::connection_msg("Transport closed"));
+                    }
                 }
 
                 Ok(msg)
@@ -158,7 +160,7 @@ impl Transport for IpmbTransport {
             id: uuid::Uuid::new_v4(),
             msg_type: crate::message::MessageType::Shutdown,
             source: self.process_name.clone(),
-            target: Some(self.process_name.clone()), // Send to self
+            target: Some("service_provider".into()), // Send to self
             topic: None,
             payload: vec![],
             correlation_id: None,

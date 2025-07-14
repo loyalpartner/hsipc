@@ -529,6 +529,19 @@ impl ProcessHub {
                     // TODO: Clean up subscription properly
                 }
             }
+            MessageType::Shutdown => {
+                // Handle shutdown message from client
+                tracing::info!("🛑 Shutdown requested from {}", msg.source.clone());
+
+                match msg.target {
+                    Some(_) => {
+                        transport
+                            .send(Message::shutdown(hub_name.to_string(), msg.source))
+                            .await?;
+                    }
+                    None => {}
+                }
+            }
             _ => {}
         }
 
@@ -942,7 +955,7 @@ impl Drop for ProcessHub {
     fn drop(&mut self) {
         // Set shutdown signal to notify background tasks
         self.shutdown_signal.store(true, Ordering::Relaxed);
-        
+
         // Try to perform a quick cleanup in a blocking manner
         // Note: This is a best-effort cleanup. For graceful shutdown,
         // users should call shutdown() explicitly before dropping.
@@ -951,14 +964,20 @@ impl Drop for ProcessHub {
             let transport = self.transport.clone();
             let name = self.name.clone();
             handle.spawn(async move {
-                tracing::debug!("🧹 ProcessHub {} dropped, performing background cleanup", name);
+                tracing::debug!(
+                    "🧹 ProcessHub {} dropped, performing background cleanup",
+                    name
+                );
                 if let Err(e) = transport.close().await {
                     tracing::warn!("⚠️ Error during drop cleanup for {}: {}", name, e);
                 }
             });
         } else {
             // We're not in an async context, do minimal cleanup
-            tracing::debug!("🧹 ProcessHub {} dropped (no async context available)", self.name);
+            tracing::debug!(
+                "🧹 ProcessHub {} dropped (no async context available)",
+                self.name
+            );
         }
     }
 }

@@ -151,14 +151,16 @@ async fn run_services(hub: ProcessHub) -> Result<()> {
 
     // Keep services running until Ctrl+C
     println!("🔄 Services running. Press Ctrl+C to stop...");
-    
-    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl_c");
+
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to listen for ctrl_c");
     println!("🛑 Received Ctrl+C, shutting down services...");
-    
+
     if let Err(e) = hub.shutdown().await {
         eprintln!("Error during shutdown: {}", e);
     }
-    
+
     Ok(())
 }
 

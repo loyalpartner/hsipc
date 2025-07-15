@@ -31,7 +31,7 @@ pub struct Message {
     pub metadata: MessageMetadata,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MessageType {
     Request,
     Response,
@@ -51,6 +51,8 @@ pub enum MessageType {
     SubscriptionReject,
     SubscriptionData,
     SubscriptionCancel,
+    // Transport control
+    Shutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,7 +226,7 @@ impl Message {
         let subscription_msg = crate::subscription::SubscriptionMessage::Request {
             id: Uuid::new_v4(),
             method: method.clone(),
-            params: serde_json::from_slice(&params).unwrap_or(serde_json::Value::Null),
+            params: params.clone(),
         };
         let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
 
@@ -291,9 +293,10 @@ impl Message {
         subscription_id: Uuid,
         data: serde_json::Value,
     ) -> Self {
+        let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
         let subscription_msg = crate::subscription::SubscriptionMessage::Data {
             id: subscription_id,
-            data,
+            data: data_bytes,
         };
         let payload = bincode::serialize(&subscription_msg).unwrap_or_default();
 
@@ -324,6 +327,22 @@ impl Message {
             topic: Some("subscription.cancel".to_string()),
             payload,
             correlation_id: Some(subscription_id),
+            metadata: MessageMetadata::default(),
+        }
+    }
+
+    /// Create a shutdown message
+    pub fn shutdown(source: String, target: String) -> Self {
+        let payload = bincode::serialize(&()).unwrap_or_default();
+
+        Self {
+            id: Uuid::new_v4(),
+            msg_type: MessageType::Shutdown,
+            source,
+            target: Some(target),
+            topic: Some("shutdown".to_string()),
+            payload,
+            correlation_id: None,
             metadata: MessageMetadata::default(),
         }
     }

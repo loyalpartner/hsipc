@@ -1,4 +1,4 @@
-.PHONY: quick full check watch multiprocess demo integration benchmark bench-quick bench-core tdd tdd-watch tdd-core smart-test
+.PHONY: quick full check watch multiprocess demo benchmark bench-quick bench-core tdd tdd-watch tdd-core smart-test tdd-red tdd-green tdd-refactor tdd-commit tdd-full status-check pre-commit-check
 
 # Quick verification (30 seconds) - Primary development command
 quick:
@@ -30,10 +30,6 @@ demo:
 	@echo "🎬 Running RPC system demo..."
 	@cd examples/trait_based_service && cargo run demo
 
-# Integration test (focused testing)
-integration:
-	@echo "🔧 Running integration tests..."
-	@cargo test --test integration
 
 # TDD development cycle (<10 seconds) - Core functionality only
 tdd:
@@ -98,3 +94,75 @@ bench-core:
 clean:
 	@echo "🧹 清理构建缓存..."
 	@cargo clean
+
+# TDD红绿重构循环支持
+# ===========================
+
+# 红色阶段：编写失败测试
+tdd-red:
+	@echo "🔴 TDD Red Phase: Ready to write failing tests..."
+	@cargo check --all-targets --quiet || (echo "❌ 语法错误，修复后继续"; exit 1)
+	@echo "✅ 语法检查通过，可以编写失败测试了"
+	@echo "💡 提示: 编写测试后运行 'make tdd-green'"
+
+# 绿色阶段：最小实现通过测试
+tdd-green:
+	@echo "🟢 TDD Green Phase: Making tests pass..."
+	@cargo test --quiet || (echo "❌ 测试仍然失败，继续实现代码"; exit 1)
+	@echo "✅ 测试通过，进入绿色状态！"
+	@echo "💡 提示: 现在可以运行 'make tdd-refactor'"
+
+# 重构阶段：改进代码质量
+tdd-refactor:
+	@echo "♻️ TDD Refactor Phase: Improving code quality..."
+	@cargo test --quiet || (echo "❌ 重构破坏了测试"; exit 1)
+	@cargo clippy --all-targets --quiet || (echo "❌ 代码质量检查失败"; exit 1)
+	@cargo fmt || true
+	@echo "✅ 重构完成，代码质量提升"
+	@echo "💡 提示: 运行 'make tdd-commit' 提交绿色状态"
+
+# 准备提交绿色状态
+tdd-commit:
+	@echo "📝 TDD Commit: Preparing green state for commit..."
+	@cargo test --quiet || (echo "❌ 测试失败，无法提交"; exit 1)
+	@git add .
+	@echo "✅ 绿色状态已暂存，准备提交"
+	@echo "💡 提示: 使用 'git commit -m \"your message\"' 提交"
+
+# 完整TDD循环（检查状态并建议下一步）
+tdd-full:
+	@echo "🔄 智能TDD循环..."
+	@if ! cargo test --quiet >/dev/null 2>&1; then \
+		echo "🔴 检测到失败测试，建议进入绿色阶段"; \
+		echo "💡 运行: make tdd-green"; \
+	else \
+		echo "🟢 测试通过，建议进入重构阶段"; \
+		echo "💡 运行: make tdd-refactor"; \
+	fi
+
+# 工作状态检查
+status-check:
+	@echo "🔍 检查当前工作状态..."
+	@echo "📁 Git状态:"
+	@if ! git diff --quiet; then \
+		echo "  ⚠️ 有未提交的修改"; \
+		git status -s; \
+	else \
+		echo "  ✅ 工作目录干净"; \
+	fi
+	@echo "🧪 测试状态:"
+	@if ! cargo test --quiet >/dev/null 2>&1; then \
+		echo "  🔴 当前处于红色状态（测试失败）"; \
+		echo "  💡 建议: make tdd-green"; \
+	else \
+		echo "  🟢 当前处于绿色状态（测试通过）"; \
+		echo "  💡 建议: make tdd-refactor 或 make tdd-commit"; \
+	fi
+
+# 提交前检查
+pre-commit-check:
+	@echo "🛡️ 提交前质量检查..."
+	@cargo test --quiet || (echo "❌ 测试失败，禁止提交"; exit 1)
+	@cargo clippy --all-targets --quiet -- -D warnings || (echo "❌ 代码质量不达标"; exit 1)
+	@cargo fmt --check || (echo "❌ 代码格式不规范"; exit 1)
+	@echo "✅ 质量检查通过，可以安全提交"

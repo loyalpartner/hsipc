@@ -149,10 +149,19 @@ async fn run_services(hub: ProcessHub) -> Result<()> {
     // Additional wait to ensure services are fully registered
     sleep(Duration::from_secs(1)).await;
 
-    // Keep services running
-    loop {
-        sleep(Duration::from_secs(1)).await;
+    // Keep services running until Ctrl+C
+    println!("🔄 Services running. Press Ctrl+C to stop...");
+
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to listen for ctrl_c");
+    println!("🛑 Received Ctrl+C, shutting down services...");
+
+    if let Err(e) = hub.shutdown().await {
+        eprintln!("Error during shutdown: {}", e);
     }
+
+    Ok(())
 }
 
 async fn run_client(hub: ProcessHub) -> Result<()> {
@@ -199,23 +208,30 @@ async fn run_client(hub: ProcessHub) -> Result<()> {
         Err(e) => println!("❌ Get user failed: {e}"),
     }
 
+    println!("✅ All client operations completed! Client exiting...");
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with line numbers and compact format
+    tracing_subscriber::fmt()
+        .with_line_number(true)
+        .with_file(true)
+        .with_target(false)
+        .compact()
+        .init();
 
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(|s| s.as_str()) {
         Some("services") => {
-            let hub = ProcessHub::new("service_provider").await?;
+            let hub = ProcessHub::builder("service_provider").build().await?;
             println!("🔄 Services running... Press Ctrl+C to stop");
             run_services(hub).await
         }
         Some("client") => {
-            let hub = ProcessHub::new("client").await?;
+            let hub = ProcessHub::builder("client").build().await?;
             run_client(hub).await?;
             println!("✅ Client completed!");
             Ok(())
@@ -226,12 +242,12 @@ async fn main() -> Result<()> {
             // For demo, run both services and client with shared hub
             println!("🎬 Running demo with both services and client...");
 
-            let hub = ProcessHub::new("shared_hub").await?;
-            let services_hub = hub.clone();
-            let client_hub = hub.clone();
+            let services_hub = ProcessHub::builder("services").build().await?;
+            let client_hub = ProcessHub::builder("client").build().await?;
 
+            let services_hub_clone = services_hub.clone();
             let services_handle = tokio::spawn(async move {
-                if let Err(e) = run_services(services_hub).await {
+                if let Err(e) = run_services(services_hub_clone).await {
                     eprintln!("Services error: {e}");
                 }
             });
@@ -248,8 +264,10 @@ async fn main() -> Result<()> {
             // Wait for client to finish
             let _ = client_handle.await;
 
+            services_hub.shutdown().await;
+
             println!("\n🎯 Demo completed! Shutting down...");
-            services_handle.abort();
+            // services_handle.abort();
 
             Ok(())
         }

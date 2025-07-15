@@ -111,7 +111,7 @@ async fn run_server() -> Result<()> {
     info!("=== Starting Calculator Server ===");
 
     // Create server hub
-    let hub = ProcessHub::new("calculator_server").await?;
+    let hub = ProcessHub::builder("calculator_server").build().await?;
     info!("Server hub created");
 
     // Register calculator service
@@ -127,12 +127,16 @@ async fn run_server() -> Result<()> {
     // Wait for service registration to propagate
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    info!("🔄 Server running... Press Ctrl+C to stop");
+    info!("🔄 Server running. Press Ctrl+C to stop...");
 
-    // Keep server running
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl_c");
+    info!("🛑 Received Ctrl+C, shutting down server...");
+    
+    if let Err(e) = hub.shutdown().await {
+        info!("Error during server shutdown: {}", e);
     }
+    
+    Ok(())
 }
 
 async fn run_client() -> Result<()> {
@@ -142,7 +146,7 @@ async fn run_client() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
     // Create client hub
-    let hub = ProcessHub::new("calculator_client").await?;
+    let hub = ProcessHub::builder("calculator_client").build().await?;
     let client = CalculatorClient::new(hub);
     info!("Client connected");
 
@@ -170,13 +174,19 @@ async fn run_client() -> Result<()> {
         Err(e) => info!("❌ Factorial failed: {e}"),
     }
 
-    info!("✅ Client test completed!");
+    info!("✅ Client test completed! Client exiting...");
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with line numbers and compact format
+    tracing_subscriber::fmt()
+        .with_line_number(true)
+        .with_file(true)
+        .with_target(false)
+        .compact()
+        .init();
 
     let args: Vec<String> = std::env::args().collect();
 

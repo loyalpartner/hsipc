@@ -78,12 +78,20 @@ impl Subscriber for AllSensorSubscriber {
 async fn run_publisher() -> Result<()> {
     println!("🚀 Starting sensor data publisher...");
 
-    let hub = ProcessHub::new("sensor_publisher").await?;
+    let hub = ProcessHub::builder("sensor_publisher").build().await?;
+
+    let mut event_count = 0;
+    let max_events = 6; // Publish 6 events total (3 temp + 3 humidity)
 
     let mut temp_interval = interval(Duration::from_secs(2));
     let mut humidity_interval = interval(Duration::from_secs(3));
 
     loop {
+        if event_count >= max_events {
+            println!("✅ Published {} events. Publisher exiting...", event_count);
+            break;
+        }
+
         tokio::select! {
             _ = temp_interval.tick() => {
                 // Publish temperature data using Event trait
@@ -99,6 +107,7 @@ async fn run_publisher() -> Result<()> {
 
                 println!("📤 Publishing temperature: {:.1}°C", event.value);
                 hub.publish_event(event).await?;
+                event_count += 1;
             }
 
             _ = humidity_interval.tick() => {
@@ -115,15 +124,22 @@ async fn run_publisher() -> Result<()> {
 
                 println!("📤 Publishing humidity: {:.1}%", event.value);
                 hub.publish_event(event).await?;
+                event_count += 1;
             }
         }
     }
+
+    // Explicitly shutdown the hub
+    println!("🛑 Shutting down publisher...");
+    hub.shutdown().await?;
+    
+    Ok(())
 }
 
 async fn run_subscriber() -> Result<()> {
     println!("👂 Starting event subscribers...");
 
-    let hub = ProcessHub::new("event_subscriber").await?;
+    let hub = ProcessHub::builder("event_subscriber").build().await?;
 
     // Register subscribers
     let temp_subscriber = TemperatureSubscriber;
@@ -136,15 +152,28 @@ async fn run_subscriber() -> Result<()> {
 
     println!("✅ Subscribers registered, waiting for events...");
 
-    // Keep subscribers running
-    loop {
-        sleep(Duration::from_secs(1)).await;
-    }
+    // Keep subscribers running for a limited time
+    println!("⏱️  Subscribing for 20 seconds...");
+    sleep(Duration::from_secs(20)).await;
+    
+    println!("✅ Subscriber session completed. Exiting...");
+    
+    // Explicitly shutdown the hub
+    println!("🛑 Shutting down subscriber...");
+    hub.shutdown().await?;
+    
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with line numbers and compact format
+    tracing_subscriber::fmt()
+        .with_line_number(true)
+        .with_file(true)
+        .with_target(false)
+        .compact()
+        .init();
 
     let args: Vec<String> = std::env::args().collect();
 
@@ -172,9 +201,10 @@ async fn main() -> Result<()> {
                 }
             });
 
-            // Run for a while
-            sleep(Duration::from_secs(30)).await;
+            // Run for a while to let both complete
+            sleep(Duration::from_secs(25)).await;
 
+            println!("🎯 Demo completed!");
             publisher_handle.abort();
             subscriber_handle.abort();
 

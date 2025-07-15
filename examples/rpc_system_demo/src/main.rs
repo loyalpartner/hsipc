@@ -6,6 +6,7 @@
 use clap::{Parser, Subcommand};
 use hsipc::{method, rpc, subscription, ProcessHub};
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 // Request/Response types
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -194,6 +195,14 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> hsipc::Result<()> {
+    // Initialize tracing with line numbers and compact format
+    tracing_subscriber::fmt()
+        .with_line_number(true)
+        .with_file(true)
+        .with_target(false)
+        .compact()
+        .init();
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -205,28 +214,28 @@ async fn main() -> hsipc::Result<()> {
 
 /// Comprehensive demo showcasing all RPC features
 async fn run_demo() -> hsipc::Result<()> {
-    println!("🚀 RPC System Demo - Testing all features...");
+    info!("🚀 RPC System Demo - Testing all features...");
 
     // Setup
-    let hub = ProcessHub::new("rpc_demo").await?;
+    let hub = ProcessHub::builder("rpc_demo").build().await?;
     let service = CalculatorService::new(CalculatorImpl::new());
     hub.register_service(service).await?;
 
     let client = CalculatorClient::new(hub);
 
     // 1. Test basic async method
-    println!("✅ Testing basic async method...");
+    info!("✅ Testing basic async method...");
     let add_result = client.add(CalculationRequest { x: 10.0, y: 5.0 }).await?;
-    println!(
+    info!(
         "   Add result: {} = {}",
         add_result.operation, add_result.result
     );
     assert_eq!(add_result.result, 15.0);
 
     // 2. Test sync method
-    println!("✅ Testing sync method...");
+    info!("✅ Testing sync method...");
     let multiply_result = client.multiply(6, 7)?;
-    println!("   Multiply result: {multiply_result}");
+    info!("   Multiply result: {multiply_result}");
     assert_eq!(multiply_result, 42);
 
     // 3. Test multi-parameter method
@@ -271,7 +280,7 @@ async fn run_demo() -> hsipc::Result<()> {
     println!("   Complex calculation result: {complex_result}");
 
     println!("\n🎉 All RPC features working correctly!");
-    println!("📊 Demo completed in < 30 seconds");
+    info!("📊 Demo completed in < 30 seconds");
 
     Ok(())
 }
@@ -280,15 +289,18 @@ async fn run_demo() -> hsipc::Result<()> {
 async fn run_server() -> hsipc::Result<()> {
     println!("🖥️  Starting RPC server...");
 
-    let hub = ProcessHub::new("calculator_server").await?;
+    let hub = ProcessHub::builder("calculator_server").build().await?;
     let service = CalculatorService::new(CalculatorImpl::new());
     hub.register_service(service).await?;
 
     println!("✅ Server running. Press Ctrl+C to stop.");
 
-    // Keep server running
-    tokio::signal::ctrl_c().await?;
-    println!("🛑 Server shutting down...");
+    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl_c");
+    println!("🛑 Received Ctrl+C, shutting down server...");
+    
+    if let Err(e) = hub.shutdown().await {
+        eprintln!("Error during server shutdown: {}", e);
+    }
 
     Ok(())
 }
@@ -297,7 +309,7 @@ async fn run_server() -> hsipc::Result<()> {
 async fn run_client() -> hsipc::Result<()> {
     println!("📱 Starting RPC client...");
 
-    let hub = ProcessHub::new("calculator_client").await?;
+    let hub = ProcessHub::builder("calculator_client").build().await?;
     let client = CalculatorClient::new(hub);
 
     // Simple client operations

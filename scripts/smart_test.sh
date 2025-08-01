@@ -52,13 +52,14 @@ elif [[ $MODIFIED_FILES == *"transport"* ]]; then
 # 检查是否修改了示例代码
 elif [[ $MODIFIED_FILES == *"examples"* ]]; then
     echo "📚 检测到示例修改，运行示例验证..."
-    if [[ $MODIFIED_FILES == *"trait_based_service"* ]]; then
-        cd examples/trait_based_service && cargo run demo
-    elif [[ $MODIFIED_FILES == *"request_response"* ]]; then
-        cd examples/request_response && cargo run client
-    elif [[ $MODIFIED_FILES == *"pubsub_events"* ]]; then
-        cd examples/pubsub_events && cargo run publisher
+    if [[ $MODIFIED_FILES == *"rpc_system_demo"* ]]; then
+        echo "🎬 检测到合并示例修改，运行完整演示验证..."
+        cd examples/rpc_system_demo && cargo run demo
+        echo "🧪 运行示例集成测试..."
+        cd ../.. && cargo test --test example_integration_tests
     else
+        # Fallback for any other example changes
+        echo "🎬 运行默认演示..."
         make demo
     fi
     echo "✅ 示例验证完成"

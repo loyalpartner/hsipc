@@ -6,7 +6,7 @@ quick:
 	@echo "  → Checking syntax..."
 	@cargo check --all-targets --quiet || (echo "❌ Syntax check failed"; exit 1)
 	@echo "  → Running core functionality..."
-	@cd examples/trait_based_service && cargo run demo > /dev/null 2>&1 || (echo "❌ Core functionality failed"; exit 1)
+	@cd examples/rpc_system_demo && timeout 45 cargo run demo > /dev/null 2>&1 || (echo "❌ Core functionality failed"; exit 1)
 	@echo "✅ Quick verification passed!"
 
 # Full testing (5 minutes) - Pre-commit verification
@@ -58,7 +58,7 @@ smart-test:
 # Real-time monitoring
 watch:
 	@echo "👀 Starting real-time monitoring..."
-	@cd examples/trait_based_service && cargo watch -x 'run demo'
+	@cd examples/rpc_system_demo && cargo watch -x 'run demo'
 
 # 格式化代码
 fmt:

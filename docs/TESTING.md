@@ -59,9 +59,9 @@ make tdd-core      # 只运行核心测试
 make tdd-watch     # 实时监控TDD测试
 
 # 3. 功能验证（30秒）
-cd examples/trait_based_service && cargo run demo    # 验证 trait-based 服务
-cd examples/request_response && cargo run client     # 验证 RPC 功能
-cd examples/pubsub_events && cargo run publisher     # 验证事件系统
+cd examples/rpc_system_demo && cargo run demo        # 验证完整系统
+cd examples/rpc_system_demo && cargo run events      # 验证事件系统
+cd examples/rpc_system_demo && cargo run client      # 验证 RPC 客户端
 
 # 4. 快速验证（1分钟）
 make quick
@@ -106,7 +106,7 @@ check:
 # 实时监控
 watch:
 	@echo "👀 开始实时监控..."
-	@cd examples/trait_based_service && cargo watch -x 'run demo'
+	@cd examples/rpc_system_demo && cargo watch -x 'run demo'
 
 # 多进程通信测试
 multiprocess:

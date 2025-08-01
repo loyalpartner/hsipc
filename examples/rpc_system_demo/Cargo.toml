@@ -6,9 +6,12 @@ publish = false
 
 [dependencies]
 hsipc = { path = "../../hsipc" }
+hsipc-macros = { path = "../../hsipc-macros" }
 tokio = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 clap = { version = "4.0", features = ["derive"] }
 futures = { workspace = true }
 bincode = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

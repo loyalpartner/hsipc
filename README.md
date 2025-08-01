@@ -147,25 +147,25 @@ fn main() -> hsipc::Result<()> {
 ## 运行示例
 
 ```bash
-# RPC 系统完整演示（推荐）
+# 综合演示 - 展示所有功能（推荐）
 cargo run --example rpc_system_demo demo
 
-# RPC 服务示例
-cargo run --example trait_based_service demo
-
-# 基础请求/响应示例
+# RPC 系统 - 多进程服务器/客户端模式
 # 终端 1 - 启动服务器
-cargo run --example request_response server
+cargo run --example rpc_system_demo server
 
-# 终端 2 - 启动客户端
-cargo run --example request_response client
+# 终端 2 - 启动客户端  
+cargo run --example rpc_system_demo client
 
-# 发布/订阅示例
+# 事件系统演示
+cargo run --example rpc_system_demo events
+
+# 发布/订阅 - 多进程发布者/订阅者模式
 # 终端 1 - 启动订阅者
-cargo run --example pubsub_events subscriber
+cargo run --example rpc_system_demo subscriber
 
 # 终端 2 - 启动发布者
-cargo run --example pubsub_events publisher
+cargo run --example rpc_system_demo publisher
 ```
 
 ## 架构

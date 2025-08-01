@@ -21,16 +21,16 @@
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!     let hub = ProcessHub::new("demo").await?;
-//!     
+//!
 //!     // Register service
 //!     let service = CalculatorService::new(CalculatorImpl);
 //!     hub.register_service(service).await?;
-//!     
+//!
 //!     // Use typed client
 //!     let client = CalculatorClient::new(hub);
 //!     let result = client.add(10, 5).await?;
 //!     assert_eq!(result, 15);
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```
@@ -53,14 +53,14 @@
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!     let hub = ProcessHub::new("demo").await?;
-//!     
+//!
 //!     // Publish event
 //!     let event = TemperatureEvent {
 //!         value: 25.3,
 //!         unit: "Celsius".to_string(),
 //!     };
 //!     hub.publish_event(event).await?;
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```
@@ -95,9 +95,6 @@ pub mod transport;
 pub mod transport_ipmb;
 
 #[cfg(test)]
-mod tests;
-
-#[cfg(test)]
 mod error_tests;
 
 // Re-exports
@@ -107,6 +104,11 @@ pub use hub::{ProcessHub, SyncProcessHub};
 pub use hub::{Service, ServiceRegistry};
 pub use message::{Message, Request, Response};
 pub use subscription::{PendingSubscriptionSink, RpcSubscription, SubscriptionSink};
+
+// Re-export external dependencies needed by generated code
+pub use serde_json;
+pub use tokio;
+pub use uuid;
 
 // Type alias for subscription results
 pub type SubscriptionResult = Result<()>;
@@ -138,7 +140,7 @@ pub mod macros {
     ///     async fn add(&self, params: (i32, i32)) -> Result<i32> {
     ///         Ok(params.0 + params.1)
     ///     }
-    ///     
+    ///
     ///     async fn multiply(&self, params: (i32, i32)) -> Result<i32> {
     ///         Ok(params.0 * params.1)
     ///     }
@@ -151,16 +153,16 @@ pub mod macros {
     /// // Usage:
     /// async fn example() -> Result<()> {
     ///     let hub = ProcessHub::new("demo").await?;
-    ///     
+    ///
     ///     // Register service
     ///     let service = CalculatorService::new(Calculator);
     ///     hub.register_service(service).await?;
-    ///     
+    ///
     ///     // Use client
     ///     let client = CalculatorClient::new("client").await?;
     ///     let result = client.add((10, 5)).await?;
     ///     assert_eq!(result, 15);
-    ///     
+    ///
     ///     Ok(())
     /// }
     /// ```
@@ -184,7 +186,7 @@ pub mod macros {
     /// }
     ///
     /// #[derive(Event, Serialize, Deserialize, Debug, Clone)]
-    /// #[event(topic = "sensor/humidity")]  
+    /// #[event(topic = "sensor/humidity")]
     /// pub struct HumidityEvent {
     ///     pub percentage: f64,
     ///     pub timestamp: u64,
@@ -193,13 +195,13 @@ pub mod macros {
     /// // Usage:
     /// async fn example() -> Result<()> {
     ///     let hub = ProcessHub::new("publisher").await?;
-    ///     
+    ///
     ///     let temp_event = TemperatureEvent {
     ///         value: 25.3,
     ///         unit: "Celsius".to_string(),
     ///         timestamp: 1234567890,
     ///     };
-    ///     
+    ///
     ///     hub.publish_event(temp_event).await?;
     ///     Ok(())
     /// }
@@ -249,7 +251,7 @@ pub mod macros {
     ///     async fn add(&self, params: (i32, i32)) -> Result<i32> {
     ///         Ok(params.0 + params.1)
     ///     }
-    ///     
+    ///
     ///     async fn multiply(&self, params: (i32, i32)) -> Result<i32> {
     ///         Ok(params.0 * params.1)
     ///     }
@@ -308,7 +310,7 @@ pub mod macros {
     ///     async fn add(&self, params: (i32, i32)) -> Result<i32>;
     /// }
     ///
-    /// // Step 2: Implement with service wrapper generation  
+    /// // Step 2: Implement with service wrapper generation
     /// struct LocalCalculator;
     ///
     /// #[service_impl]

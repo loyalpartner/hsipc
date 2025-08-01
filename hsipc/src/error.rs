@@ -91,6 +91,22 @@ pub enum Error {
         topic: Option<String>,
     },
 
+    /// Subscription lifecycle errors
+    #[error("Subscription lifecycle error: {message}")]
+    SubscriptionLifecycle {
+        message: String,
+        subscription_id: uuid::Uuid,
+        state: String,
+    },
+
+    /// Server discovery errors
+    #[error("Server discovery failed: {message}")]
+    ServerDiscovery {
+        message: String,
+        service_method: String,
+        available_servers: Vec<String>,
+    },
+
     /// Request validation errors
     #[error("Invalid request: {message}")]
     InvalidRequest {
@@ -178,6 +194,23 @@ impl Error {
         }
     }
 
+    /// Create a timeout error with default duration for specific operations
+    pub fn timeout_msg(operation: impl Into<String>) -> Self {
+        let op = operation.into();
+        let duration_ms = match op.as_str() {
+            "IPMB recv timeout - continue loop" => 100,  // Short timeout for polling
+            "service call" => 30000,                     // Long timeout for service calls
+            "subscription request" => 5000,              // Medium timeout for subscriptions
+            "server discovery" => 2000,                  // Medium timeout for discovery
+            _ => 1000,                                    // Default 1s timeout
+        };
+        
+        Self::Timeout {
+            operation: op,
+            duration_ms,
+        }
+    }
+
     /// Create a runtime error with source
     pub fn runtime<E>(message: impl Into<String>, source: E) -> Self
     where
@@ -246,6 +279,32 @@ impl Error {
         }
     }
 
+    /// Create a subscription lifecycle error
+    pub fn subscription_lifecycle(
+        message: impl Into<String>,
+        subscription_id: uuid::Uuid,
+        state: impl Into<String>,
+    ) -> Self {
+        Self::SubscriptionLifecycle {
+            message: message.into(),
+            subscription_id,
+            state: state.into(),
+        }
+    }
+
+    /// Create a server discovery error
+    pub fn server_discovery(
+        message: impl Into<String>,
+        service_method: impl Into<String>,
+        available_servers: Vec<String>,
+    ) -> Self {
+        Self::ServerDiscovery {
+            message: message.into(),
+            service_method: service_method.into(),
+            available_servers,
+        }
+    }
+
     /// Create an invalid request error
     pub fn invalid_request(message: impl Into<String>, context: Option<String>) -> Self {
         Self::InvalidRequest {
@@ -270,7 +329,35 @@ impl Error {
             Error::Protocol { .. } => false,
             Error::InvalidTopicPattern { .. } => false,
             Error::SubscriptionError { .. } => false,
+            Error::SubscriptionLifecycle { .. } => true,
+            Error::ServerDiscovery { .. } => true,
             Error::InvalidRequest { .. } => false,
+        }
+    }
+
+    /// Check if this is a transport timeout that should continue the message loop
+    pub fn is_continue_timeout(&self) -> bool {
+        matches!(self, Error::Timeout { operation, .. } if operation.contains("continue loop"))
+    }
+
+    /// Check if this is a connection lost error that should stop processing
+    pub fn is_connection_lost(&self) -> bool {
+        matches!(self, Error::Connection { message, .. } if message.contains("Transport closed"))
+    }
+
+    /// Get retry delay in milliseconds based on error type
+    pub fn retry_delay_ms(&self) -> Option<u64> {
+        if !self.is_retryable() {
+            return None;
+        }
+        
+        match self {
+            Error::Transport { .. } => Some(100),
+            Error::Connection { .. } => Some(500),
+            Error::Timeout { .. } => Some(200),
+            Error::Runtime { .. } => Some(100),
+            Error::Io { .. } => Some(100),
+            _ => None,
         }
     }
 
@@ -290,6 +377,8 @@ impl Error {
             Error::Protocol { .. } => "protocol",
             Error::InvalidTopicPattern { .. } => "topic_validation",
             Error::SubscriptionError { .. } => "subscription",
+            Error::SubscriptionLifecycle { .. } => "subscription_lifecycle",
+            Error::ServerDiscovery { .. } => "server_discovery",
             Error::InvalidRequest { .. } => "request_validation",
         }
     }

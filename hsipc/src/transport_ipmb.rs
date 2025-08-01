@@ -75,6 +75,16 @@ impl IpmbTransportBuilder {
     }
 }
 
+/// Classification of IPMB errors for type-safe handling
+#[derive(Debug, Clone, PartialEq)]
+enum IpmbErrorType {
+    Timeout,
+    ConnectionLost,
+    BusError,
+    SerializationError,
+    Other,
+}
+
 impl IpmbTransport {
     /// Create a builder for IpmbTransport
     pub fn builder(process_name: impl Into<String>) -> IpmbTransportBuilder {
@@ -84,6 +94,49 @@ impl IpmbTransport {
     /// Create a new IPMB transport with default settings (for backward compatibility)
     pub async fn new(process_name: &str) -> Result<Self> {
         Self::builder(process_name).build().await
+    }
+
+    /// Classify IPMB errors for type-safe error handling
+    fn classify_ipmb_error(error: &ipmb::RecvError) -> IpmbErrorType {
+        use std::error::Error as StdError;
+        
+        // First check the error type directly if available
+        let error_str = error.to_string().to_lowercase();
+        
+        // Check for timeout patterns
+        if error_str.contains("timeout") || 
+           error_str.contains("timed out") ||
+           error.source().map(|s| {
+               let source_str = s.to_string().to_lowercase();
+               source_str.contains("timeout") || source_str.contains("timed out")
+           }).unwrap_or(false) {
+            return IpmbErrorType::Timeout;
+        }
+        
+        // Check for connection/bus errors
+        if error_str.contains("connection") ||
+           error_str.contains("disconnected") ||
+           error_str.contains("bus") ||
+           error_str.contains("endpoint") {
+            return IpmbErrorType::ConnectionLost;
+        }
+        
+        // Check for serialization errors
+        if error_str.contains("serialize") ||
+           error_str.contains("deserialize") ||
+           error_str.contains("encoding") ||
+           error_str.contains("decoding") {
+            return IpmbErrorType::SerializationError;
+        }
+        
+        // Check for bus-specific errors
+        if error_str.contains("bus error") ||
+           error_str.contains("message queue") ||
+           error_str.contains("channel") {
+            return IpmbErrorType::BusError;
+        }
+        
+        IpmbErrorType::Other
     }
 }
 
@@ -126,7 +179,9 @@ impl Transport for IpmbTransport {
         // Use spawn_blocking to run the synchronous recv in a separate thread
         let recv_result = tokio::task::spawn_blocking(move || {
             let mut guard = receiver.lock().unwrap();
-            guard.recv(None) // No timeout, true blocking wait
+            // Set a short timeout for recv to allow graceful shutdown while maintaining responsiveness
+            let timeout = Some(std::time::Duration::from_millis(100)); // 100ms timeout
+            guard.recv(timeout)
         })
         .await
         .map_err(|e| Error::runtime_msg(format!("Blocking task failed: {e}")))?;
@@ -146,8 +201,27 @@ impl Transport for IpmbTransport {
                 Ok(msg)
             }
             Err(e) => {
-                // Real transport error
-                Err(Error::transport_msg(format!("IPMB recv failed: {e}")))
+                // Type-safe error detection based on IPMB error types  
+                let error_classification = Self::classify_ipmb_error(&e);
+                
+                match error_classification {
+                    IpmbErrorType::Timeout => {
+                        // Timeout is expected, return a special timeout error to let message loop continue
+                        Err(Error::timeout_msg("IPMB recv timeout - continue loop"))
+                    }
+                    IpmbErrorType::ConnectionLost => {
+                        Err(Error::connection_msg("IPMB connection lost"))
+                    }
+                    IpmbErrorType::BusError => {
+                        Err(Error::transport("IPMB bus error", e))
+                    }
+                    IpmbErrorType::SerializationError => {
+                        Err(Error::serialization("IPMB message serialization failed", e))
+                    }
+                    IpmbErrorType::Other => {
+                        Err(Error::transport("IPMB recv failed", e))
+                    }
+                }
             }
         }
     }

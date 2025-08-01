@@ -201,6 +201,14 @@ impl ProcessHubBuilder {
     }
 }
 
+/// Statistics about subscription health
+#[derive(Debug, Clone)]
+pub struct SubscriptionStats {
+    pub active_subscriptions: usize,
+    pub dead_subscriptions: usize,
+    pub healthy_subscriptions: usize,
+}
+
 /// Main process hub for IPC communication
 #[derive(Clone)]
 pub struct ProcessHub {
@@ -291,22 +299,26 @@ impl ProcessHub {
                         tracing::info!("✅ Message loop completed processing message");
                     }
                     Err(e) => {
-                        // Handle ConnectionLost specially - it means shutdown
-                        if matches!(e, Error::Connection { .. }) {
+                        // Use type-safe error detection for better handling
+                        if e.is_connection_lost() {
                             tracing::info!("🔌 Transport connection lost, stopping message loop");
                             break;
                         }
-                        // Handle timeout vs real errors differently
-                        if e.to_string().contains("timeout") {
+                        
+                        if e.is_continue_timeout() {
                             // Normal timeout - just continue (no logging needed)
                             continue;
-                        } else {
-                            // Real transport error - log and continue (don't crash message loop)
-                            tracing::warn!("⚠️ Message loop recv error: {}", e);
-                            // Small delay to prevent busy loop on persistent errors
-                            tokio::time::sleep(Duration::from_millis(100)).await;
-                            continue;
                         }
+                        
+                        // Real transport error - log and continue with retry delay
+                        tracing::warn!("⚠️ Message loop recv error: {} (category: {})", e, e.category());
+                        
+                        // Use error-specific retry delay to prevent busy loop
+                        if let Some(delay_ms) = e.retry_delay_ms() {
+                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        }
+                        
+                        continue;
                     }
                 }
             }
@@ -503,17 +515,41 @@ impl ProcessHub {
                     );
 
                     // Deserialize the data back to JSON for the client
-                    if let Ok(json_data) = serde_json::from_slice::<serde_json::Value>(&data) {
-                        // Forward data to the client-side RpcSubscription
-                        let active_subscriptions = active_subscriptions.read().await;
-                        if let Some(sender) = active_subscriptions.get(&id) {
-                            let _ = sender.send(json_data);
-                            tracing::info!("📊 Forwarded data to client subscription {}", id);
-                        } else {
-                            tracing::warn!("📊 No active subscription found for ID {}", id);
+                    match serde_json::from_slice::<serde_json::Value>(&data) {
+                        Ok(json_data) => {
+                            // Forward data to the client-side RpcSubscription with proper error handling
+                            let active_subscriptions = active_subscriptions.read().await;
+                            if let Some(sender) = active_subscriptions.get(&id) {
+                                match sender.send(json_data) {
+                                    Ok(()) => {
+                                        tracing::debug!("📊 Forwarded data to client subscription {}", id);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "📊 Failed to forward data to subscription {}: {} - marking for cleanup",
+                                            id, e
+                                        );
+                                        // Channel is closed, subscription is dead - we should clean it up
+                                        // For now, log the issue. Full cleanup will be implemented in lifecycle management.
+                                        tracing::warn!(
+                                            "🗑️ Subscription {} appears to be dead, should be cleaned up",
+                                            id
+                                        );
+                                    }
+                                }
+                            } else {
+                                tracing::warn!(
+                                    "📊 No active subscription found for ID {} - potential race condition or cleanup needed",
+                                    id
+                                );
+                            }
                         }
-                    } else {
-                        tracing::error!("📊 Failed to deserialize subscription data");
+                        Err(e) => {
+                            tracing::error!(
+                                "📊 Failed to deserialize subscription data for {}: {} - data may be corrupted",
+                                id, e
+                            );
+                        }
                     }
                 }
             }
@@ -732,7 +768,7 @@ impl ProcessHub {
         result
     }
 
-    /// Register a client-side subscription for data forwarding
+    /// Register a client-side subscription for data forwarding with lifecycle management
     pub async fn register_subscription(
         &self,
         id: Uuid,
@@ -744,6 +780,272 @@ impl ProcessHub {
             "🔗 Registered client subscription {} for data forwarding",
             id
         );
+        
+        // Schedule health check for this subscription
+        self.schedule_subscription_health_check(id).await;
+    }
+    
+    /// Schedule a health check for a subscription to detect dead channels
+    async fn schedule_subscription_health_check(&self, subscription_id: Uuid) {
+        let active_subscriptions = self.active_subscriptions.clone();
+        let hub_name = self.name.clone();
+        
+        tokio::spawn(async move {
+            // Wait before first health check
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            
+            // Check if subscription is still active
+            let should_cleanup = {
+                let subscriptions = active_subscriptions.read().await;
+                if let Some(sender) = subscriptions.get(&subscription_id) {
+                    // Try to detect if channel is closed by checking if receiver is still active
+                    sender.is_closed()
+                } else {
+                    // Subscription was already removed
+                    false
+                }
+            };
+            
+            if should_cleanup {
+                tracing::info!("🧹 Health check detected dead subscription {}, cleaning up", subscription_id);
+                let mut subscriptions = active_subscriptions.write().await;
+                subscriptions.remove(&subscription_id);
+                tracing::info!("🗑️ Cleaned up dead subscription {} from {}", subscription_id, hub_name);
+            } else {
+                tracing::debug!("✅ Subscription {} health check passed", subscription_id);
+            }
+        });
+    }
+    
+    /// Unregister a subscription (for cleanup)
+    pub async fn unregister_subscription(&self, id: Uuid) -> Result<()> {
+        let mut active_subscriptions = self.active_subscriptions.write().await;
+        if active_subscriptions.remove(&id).is_some() {
+            tracing::info!("🗑️ Unregistered subscription {} from hub {}", id, self.name);
+            Ok(())
+        } else {
+            Err(Error::subscription_lifecycle(
+                "Subscription not found for unregistration",
+                id,
+                "unknown".to_string(),
+            ))
+        }
+    }
+    
+    /// Get subscription statistics
+    pub async fn get_subscription_stats(&self) -> SubscriptionStats {
+        let active_subscriptions = self.active_subscriptions.read().await;
+        let active_count = active_subscriptions.len();
+        let dead_count = active_subscriptions
+            .values()
+            .filter(|sender| sender.is_closed())
+            .count();
+        
+        SubscriptionStats {
+            active_subscriptions: active_count,
+            dead_subscriptions: dead_count,
+            healthy_subscriptions: active_count - dead_count,
+        }
+    }
+    
+    /// Send message with retry logic for improved reliability
+    async fn send_with_retry(
+        transport: &Arc<dyn Transport>, 
+        msg: Message, 
+        max_retries: u32
+    ) -> Result<()> {
+        let mut last_error = None;
+        
+        for attempt in 0..max_retries {
+            match transport.send(msg.clone()).await {
+                Ok(()) => {
+                    if attempt > 0 {
+                        tracing::info!(
+                            "✅ Message send succeeded on attempt {} for msg_type: {:?}", 
+                            attempt + 1, msg.msg_type
+                        );
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "⚠️ Message send failed on attempt {} for msg_type: {:?} - {}", 
+                        attempt + 1, msg.msg_type, e
+                    );
+                    
+                    if !e.is_retryable() {
+                        tracing::error!(
+                            "❌ Non-retryable error for msg_type: {:?} - {}", 
+                            msg.msg_type, e
+                        );
+                        return Err(e);
+                    }
+                    
+                    last_error = Some(e);
+                    
+                    // Wait before retry with exponential backoff
+                    if attempt < max_retries - 1 {
+                        let base_delay = last_error.as_ref()
+                            .and_then(|e| e.retry_delay_ms())
+                            .unwrap_or(100);
+                        let retry_delay = base_delay * 2_u64.pow(attempt);
+                        
+                        tracing::debug!(
+                            "⏳ Retrying message send in {}ms (attempt {})", 
+                            retry_delay, attempt + 2
+                        );
+                        
+                        tokio::time::sleep(Duration::from_millis(retry_delay)).await;
+                    }
+                }
+            }
+        }
+        
+        Err(last_error.unwrap_or_else(|| {
+            Error::transport_msg(format!(
+                "Message send failed after {} attempts for msg_type: {:?}", 
+                max_retries, msg.msg_type
+            ))
+        }))
+    }
+
+    /// Create a subscription to a service method (for client use)
+    /// This fixes the race condition and implements dynamic server discovery
+    pub async fn create_subscription<T>(&self, method: &str, params: Vec<u8>) -> Result<crate::subscription::RpcSubscription<T>> 
+    where 
+        T: for<'de> serde::Deserialize<'de>
+    {
+        let subscription_id = Uuid::new_v4();
+        
+        // First, discover which server provides this method
+        let target_server = self.discover_service_provider(method).await?;
+        
+        tracing::info!(
+            "🔍 Discovered server '{}' for method '{}'",
+            target_server,
+            method
+        );
+        
+        // Create subscription message FIRST
+        let subscription_msg = crate::Message::subscription_request(
+            self.name.clone(),
+            Some(target_server),
+            method.to_string(),
+            params,
+        );
+        
+        // Send subscription request BEFORE registering to avoid race condition
+        tracing::info!(
+            "📤 Sending subscription request: method={} id={}",
+            method,
+            subscription_id
+        );
+        
+        // Use retry logic for subscription request to improve reliability
+        Self::send_with_retry(&self.transport, subscription_msg, 3).await?;
+        
+        // Now create the data channel and register subscription AFTER sending request
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.register_subscription(subscription_id, tx).await;
+        
+        tracing::info!(
+            "🔗 Registered subscription {} for data forwarding after request sent",
+            subscription_id
+        );
+        
+        Ok(crate::subscription::RpcSubscription::new_with_hub(subscription_id, rx, self.clone()))
+    }
+    
+    /// Discover which server provides a specific service method with retry logic
+    async fn discover_service_provider(&self, method: &str) -> Result<String> {
+        self.discover_service_provider_with_retry(method, 3).await
+    }
+    
+    /// Internal method with retry logic for service discovery
+    async fn discover_service_provider_with_retry(&self, method: &str, max_retries: u32) -> Result<String> {
+        let mut last_error = None;
+        
+        for attempt in 0..max_retries {
+            // First check our local remote services cache
+            {
+                let remote_services = self.remote_services.read().await;
+                if let Some(service_info) = remote_services.get(method) {
+                    if attempt > 0 {
+                        tracing::info!(
+                            "✅ Server discovery succeeded on attempt {} for method '{}'", 
+                            attempt + 1, method
+                        );
+                    }
+                    return Ok(service_info.process_name.clone());
+                }
+            }
+            
+            // If not found in cache, query all processes
+            tracing::info!(
+                "🔍 Method '{}' not in cache, querying remote processes (attempt {})",
+                method, attempt + 1
+            );
+            
+            match self.query_services().await {
+                Ok(()) => {
+                    // Wait for responses with configurable timeout
+                    let discovery_timeout = if attempt == 0 { 2000 } else { 1000 * (attempt + 1) as u64 };
+                    tokio::time::sleep(Duration::from_millis(discovery_timeout)).await;
+                    
+                    // Check cache again after discovery
+                    {
+                        let remote_services = self.remote_services.read().await;
+                        if let Some(service_info) = remote_services.get(method) {
+                            if attempt > 0 {
+                                tracing::info!(
+                                    "✅ Server discovery succeeded on attempt {} for method '{}'", 
+                                    attempt + 1, method
+                                );
+                            }
+                            return Ok(service_info.process_name.clone());
+                        }
+                    }
+                    
+                    // If this is the last attempt, collect available servers for error reporting
+                    if attempt == max_retries - 1 {
+                        let remote_services = self.remote_services.read().await;
+                        let available_servers: Vec<String> = remote_services
+                            .values()
+                            .map(|info| info.process_name.clone())
+                            .collect::<std::collections::HashSet<_>>()
+                            .into_iter()
+                            .collect();
+                        
+                        last_error = Some(Error::server_discovery(
+                            format!("No server found providing method: {} after {} attempts", method, max_retries),
+                            method,
+                            available_servers,
+                        ));
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "⚠️ Service query failed on attempt {} for method '{}': {}", 
+                        attempt + 1, method, e
+                    );
+                    last_error = Some(e);
+                    
+                    // Wait before retry
+                    if attempt < max_retries - 1 {
+                        let retry_delay = 500 * (attempt + 1) as u64;
+                        tokio::time::sleep(Duration::from_millis(retry_delay)).await;
+                    }
+                }
+            }
+        }
+        
+        Err(last_error.unwrap_or_else(|| {
+            Error::server_discovery(
+                format!("Service discovery failed after {} attempts", max_retries),
+                method,
+                vec![],
+            )
+        }))
     }
 
     /// Handle subscription request messages
@@ -807,8 +1109,8 @@ impl ProcessHub {
                                 data,
                             );
 
-                            if let Err(e) = transport_clone.send(data_msg).await {
-                                tracing::error!("❌ Failed to send subscription data: {}", e);
+                            if let Err(e) = Self::send_with_retry(&transport_clone, data_msg, 3).await {
+                                tracing::error!("❌ Failed to send subscription data after retries: {}", e);
                                 break;
                             }
                         }

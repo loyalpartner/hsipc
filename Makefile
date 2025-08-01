@@ -28,7 +28,7 @@ check:
 # Core RPC demo (30 seconds) - Example-driven testing
 demo:
 	@echo "🎬 Running RPC system demo..."
-	@cd examples/trait_based_service && cargo run demo
+	@cd examples/rpc_system_demo && cargo run demo
 
 
 # TDD development cycle (<10 seconds) - Core functionality only

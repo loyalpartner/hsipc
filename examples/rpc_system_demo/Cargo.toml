@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 hsipc = { path = "../../hsipc" }
+hsipc-macros = { path = "../../hsipc-macros" }
 tokio = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
